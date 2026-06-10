@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Genius Square — race your friends</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+	<h1>Genius Square</h1>
+	<div id="identity" class="muted">…</div>
+	<div id="room-controls">
+		<button id="btn-create-room">Create room</button>
+		<input id="room-code-input" placeholder="CODE" maxlength="4" size="4" autocapitalize="characters">
+		<button id="btn-join-room">Join</button>
+		<span id="room-status" class="muted"></span>
+	</div>
+</header>
+
+<main>
+	<section id="play-area">
+		<div id="board" aria-label="game board"></div>
+		<div id="status-bar">
+			<span id="timer">0.0s</span>
+			<span id="solvable-indicator"></span>
+			<span id="difficulty" class="muted"></span>
+		</div>
+		<div id="tray" aria-label="piece tray"></div>
+		<div id="controls">
+			<select id="difficulty-select">
+				<option value="dice">Classic dice roll</option>
+				<option value="hard">Harder than dice</option>
+				<option value="unique">Unique solution (expert)</option>
+			</select>
+			<button id="btn-new">New puzzle</button>
+			<button id="btn-hint">Hint</button>
+			<button id="btn-solve">Solve</button>
+			<button id="btn-clear">Clear</button>
+		</div>
+		<p class="muted" id="help">Click a piece, move the mouse over the board, click to place.
+		Press <kbd>R</kbd> to rotate/flip. Click a placed piece to pick it back up.</p>
+	</section>
+
+	<aside id="players-panel">
+		<h2>Players</h2>
+		<div id="players"></div>
+	</aside>
+</main>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>

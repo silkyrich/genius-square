@@ -1,0 +1,15 @@
+{
+	"name": "genius-square",
+	"private": true,
+	"type": "module",
+	"version": "0.1.0",
+	"description": "Multiplayer Genius Square at genius-square.richmorgan.co.uk",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"test": "node test/solver.test.js"
+	},
+	"devDependencies": {
+		"wrangler": "^4.99.0"
+	}
+}
