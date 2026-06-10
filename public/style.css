@@ -25,6 +25,7 @@
 	--cell: #3a352e;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--text); }
 
 header {
