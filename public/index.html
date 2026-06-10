@@ -22,6 +22,7 @@
 	<button id="btn-theme" title="dark / light">◐</button>
 	<div id="who">
 		<span id="identity"></span>
+		<button id="btn-login" hidden>sign in</button>
 		<button id="btn-logout">log out</button>
 	</div>
 </header>
@@ -29,7 +30,7 @@
 <main>
 	<!-- landing page (shown at / until you start) -->
 	<section id="landing" hidden>
-		<img src="/og.jpg" alt="Genius Square board" id="hero-img">
+		<img src="/hero.svg" alt="Genius Square board" id="hero-img">
 		<h2>Race your friends to solve the square.</h2>
 		<p class="muted">Pick a difficulty — from easy all the way to boards with a single
 		solution — then share your room with a link or QR code. First to finish wins the round.</p>
@@ -58,6 +59,8 @@
 				<select id="tier-select"></select>
 			</label>
 			<label id="hint-label"><input type="checkbox" id="show-count"> show solution count as a hint</label>
+			<label id="deadend-label"><input type="checkbox" id="show-deadend" checked> warn players when they hit a dead end</label>
+			<label id="explore-label"><input type="checkbox" id="explore-mode"> explorer mode — watch the solution space shrink as you pin pieces</label>
 			<button id="btn-propose" class="primary">Set the puzzle</button>
 		</div>
 		<div id="proposal-card" hidden>
@@ -85,6 +88,15 @@
 		</div>
 	</section>
 
+	<!-- room chat -->
+	<section id="chat-panel" hidden>
+		<div id="chat-log"></div>
+		<form id="chat-form">
+			<input id="chat-input" placeholder="say something…" maxlength="300" autocomplete="off">
+			<button class="primary">Send</button>
+		</form>
+	</section>
+
 	<!-- players & scores -->
 	<section id="players-panel" hidden>
 		<div id="score-header">
@@ -102,8 +114,13 @@
 
 <!-- name modal -->
 <dialog id="name-modal">
+	<h2>Who's playing?</h2>
+	<button id="btn-google" type="button" class="google">
+		<svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.8-2.1 5.1-4.4 6.7v5.5h7.1c4.2-3.9 6.6-9.6 6.6-16.2z"/><path fill="#34A853" d="M24 46c6 0 10.9-2 14.5-5.3l-7.1-5.5c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41.2 15.5 46 24 46z"/><path fill="#FBBC05" d="M11.8 28.3c-.4-1.3-.7-2.8-.7-4.3s.2-3 .7-4.3V14H4.5C3 17 2.1 20.4 2.1 24s.9 7 2.4 10l7.3-5.7z"/><path fill="#EA4335" d="M24 10.7c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.2 30 2 24 2 15.5 2 8.1 6.8 4.5 14l7.3 5.7c1.7-5.2 6.5-9 12.2-9z"/></svg>
+		Sign in with Google
+	</button>
+	<p class="muted">or play as a guest</p>
 	<form method="dialog">
-		<h2>Who's playing?</h2>
 		<input id="name-input" placeholder="your name" maxlength="24" required autocomplete="name">
 		<button class="primary">Play</button>
 	</form>

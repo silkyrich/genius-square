@@ -20,16 +20,19 @@ export class Room {
 	}
 
 	async game() {
-		return (await this.state.storage.get('game')) || {
+		const g = await this.state.storage.get('game');
+		if (g) { g.chat ||= []; return g; }	// rooms created before chat existed
+		return {
 			phase: 'lobby',
 			round: 0,
 			master: null,
-			puzzle: null,		// { cells, tier, count, showCount }
+			puzzle: null,		// { cells, tier, count, showCount, showDead, explore }
 			proposal: null,		// same shape, while phase == 'proposed'
 			agreed: [],
 			finishOrder: [],	// [{ name, ms }]
 			scores: {},		// name -> points
 			lastResult: null,	// { round, winner, order: [{name, ms, points}] }
+			chat: [],		// [{ name, text, ts }], capped
 		};
 	}
 	async putGame(g) { await this.state.storage.put('game', g); }
@@ -99,7 +102,7 @@ export class Room {
 		g.finishOrder = [];
 		for (const ws of this.state.getWebSockets()) {
 			const a = ws.deserializeAttachment();
-			a.placements = {}; a.finishedMs = null;
+			a.placements = {}; a.finishedMs = null; a.stuck = false;
 			ws.serializeAttachment(a);
 		}
 		await this.putGame(g);
@@ -140,6 +143,18 @@ export class Room {
 			att.finishedMs = null;
 			ws.serializeAttachment(att);
 			break;
+		case 'stuck':	// client-computed dead-end flag, shown to OTHER players
+			att.stuck = !!msg.stuck;
+			ws.serializeAttachment(att);
+			break;
+		case 'chat': {
+			const text = String(msg.text || '').trim().slice(0, 300);
+			if (!text) return;
+			g.chat.push({ name: att.name, text, ts: Date.now() });
+			if (g.chat.length > 50) g.chat = g.chat.slice(-50);
+			await this.putGame(g);
+			break;
+		}
 
 		// ----- game flow -----
 		case 'propose':
@@ -150,6 +165,8 @@ export class Room {
 				tier: String(msg.puzzle.tier || ''),
 				count: Number(msg.puzzle.count) || 0,
 				showCount: !!msg.puzzle.showCount,
+				showDead: msg.puzzle.showDead !== false,	// the dead-end warning is a big hint; master may turn it off
+				explore: !!msg.puzzle.explore,
 			};
 			g.phase = 'proposed';
 			g.agreed = [att.name];
@@ -191,7 +208,7 @@ export class Room {
 			g.finishOrder = [];
 			for (const sock of this.state.getWebSockets()) {
 				const a = sock.deserializeAttachment();
-				a.placements = {}; a.finishedMs = null;
+				a.placements = {}; a.finishedMs = null; a.stuck = false;
 				sock.serializeAttachment(a);
 			}
 			await this.putGame(g);

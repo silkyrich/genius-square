@@ -5,9 +5,17 @@ export { Room } from './room.js';
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ';	// no I/L/O/0/1 lookalikes
 
+function getCookie(request, name) {
+	const m = (request.headers.get('Cookie') || '').match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+	return m ? decodeURIComponent(m[1]) : null;
+}
+
 function identityFrom(request) {
-	// Cloudflare Access (IdP) injects the verified user when configured.
-	return request.headers.get('Cf-Access-Authenticated-User-Email') || null;
+	// Cloudflare Access (IdP) injects the verified user on protected paths
+	// (we protect /login); elsewhere we carry it in our own cookie, set by
+	// the /login handler after Access has verified the user.
+	return request.headers.get('Cf-Access-Authenticated-User-Email')
+		|| getCookie(request, 'gs-email') || null;
 }
 
 export default {
@@ -16,6 +24,27 @@ export default {
 
 		if (url.pathname === '/api/me')
 			return Response.json({ email: identityFrom(request) });
+
+		// /login sits behind a Cloudflare Access app (Google etc.). By the
+		// time the request reaches us the user is verified — stash the email
+		// in a cookie for the unprotected rest of the site and bounce back.
+		if (url.pathname === '/login') {
+			const email = request.headers.get('Cf-Access-Authenticated-User-Email');
+			const next = url.searchParams.get('next') || '/';
+			const headers = new Headers({ Location: next.startsWith('/') ? next : '/' });
+			if (email)
+				headers.append('Set-Cookie',
+					`gs-email=${encodeURIComponent(email)}; Path=/; Max-Age=2592000; Secure; SameSite=Lax`);
+			return new Response(null, { status: 302, headers });
+		}
+
+		if (url.pathname === '/logout') {
+			const headers = new Headers();
+			headers.append('Set-Cookie', 'gs-email=; Path=/; Max-Age=0; Secure; SameSite=Lax');
+			headers.set('Location', getCookie(request, 'CF_Authorization')
+				? '/cdn-cgi/access/logout' : '/');
+			return new Response(null, { status: 302, headers });
+		}
 
 		if (url.pathname === '/api/rooms' && request.method === 'POST') {
 			let code = '';

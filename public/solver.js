@@ -138,6 +138,46 @@ export function countSolutions(blockerCells, cap = Infinity) {
 	return count;
 }
 
+// Collect whole solutions (up to 'cap'), honoring pinned pieces — used by
+// the solution-space explorer to show every way the board could still end.
+// Returns an array of { pieceKey: cells } maps including the pinned pieces.
+export function enumerateSolutions(blockerCells, fixed = {}, cap = 400) {
+	let used = maskFromCells(blockerCells);
+	const pinned = {};
+	for (const [key, cells] of Object.entries(fixed)) {
+		const m = maskFromCells(cells);
+		if (overlaps(used, m)) return [];
+		used = union(used, m);
+		pinned[key] = cells;
+	}
+	const open = ORDER.filter(p => !(PIECES[p].key in pinned));
+	const lists = open.map(p => placements[p].filter(pl => !overlaps(pl.mask, used)));
+	const out = [];
+	const current = {};
+	function dfs(k, usedLo, usedHi) {
+		if (k === open.length) {
+			const sol = { ...pinned, ...current };
+			if (!('single' in sol)) {
+				const leftover = cellsFromMask([(~usedLo & FULL[0]) >>> 0, (~usedHi & FULL[1]) >>> 0]);
+				if (leftover.length !== 1) return false;
+				sol.single = leftover;
+			}
+			out.push(sol);
+			return out.length >= cap;
+		}
+		for (const pl of lists[k]) {
+			const [lo, hi] = pl.mask;
+			if (((lo & usedLo) | (hi & usedHi)) === 0) {
+				current[PIECES[open[k]].key] = pl.cells;
+				if (dfs(k + 1, (usedLo | lo) >>> 0, (usedHi | hi) >>> 0)) return true;
+			}
+		}
+		return false;
+	}
+	dfs(0, used[0], used[1]);
+	return out;
+}
+
 // The seven official dice (same source as gsqsolve.cpp).
 export const DICE = [
 	['A1','C1','D1','D2','E2','F3'],

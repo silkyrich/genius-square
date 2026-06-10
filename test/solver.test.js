@@ -1,6 +1,6 @@
 // Verifies the JS solver against ground-truth counts from the C++ tool
 // (silkyrich/gsqsolve). Run: npm test
-import { solve, countSolutions, nameToIndex } from '../public/solver.js';
+import { solve, countSolutions, enumerateSolutions, nameToIndex } from '../public/solver.js';
 
 const board = s => s.split(' ').map(nameToIndex);
 const cases = [
@@ -32,5 +32,16 @@ const pinned = solve(board('A3 A5 B4 C6 E2 E6 F1'), { line4: sol.line4, tblock: 
 const respected = pinned && pinned.line4.join() === sol.line4.join();
 console.log(`${respected ? 'PASS' : 'FAIL'} pinned pieces respected`);
 if (!respected) failed++;
+
+// Explorer enumeration: collected solutions agree with the counter, honor
+// pins, and each tiles the board exactly.
+const eb = board('A3 A5 B4 C6 E2 E6 F1');
+const sols = enumerateSolutions(eb, {}, 400);
+const enumOk = sols.length === 11
+	&& sols.every(s2 => new Set(Object.values(s2).flat().concat(eb)).size === 36)
+	&& enumerateSolutions(eb, { line4: sols[0].line4 }, 400)
+		.every(s2 => s2.line4.join() === sols[0].line4.join());
+console.log(`${enumOk ? 'PASS' : 'FAIL'} enumerateSolutions matches count, pins, tiles`);
+if (!enumOk) failed++;
 
 process.exit(failed ? 1 : 0);

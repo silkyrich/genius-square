@@ -91,13 +91,15 @@ button.big { font-size: 1.1rem; padding: .7rem 1.6rem; margin: .8rem 0 .4rem; wi
 #solvable-indicator.won::before { content: '★ solved!'; color: var(--gold); font-weight: 800; }
 
 #tray { display: flex; gap: .45rem; flex-wrap: wrap; justify-content: center; }
+/* fixed 4x4 footprint: rotating a piece never resizes its tile or reflows the tray */
 .tray-piece {
 	display: grid; gap: 2px; padding: 6px; border-radius: 10px; cursor: pointer;
+	grid-template-columns: repeat(4, 13px); grid-template-rows: repeat(4, 13px);
 	background: var(--surface-2); border: 2px solid transparent;
 }
 .tray-piece.selected { border-color: var(--accent); }
 .tray-piece.placed { opacity: .22; }
-.tray-piece .pc { width: 15px; height: 15px; border-radius: 3px; }
+.tray-piece .pc { width: 13px; height: 13px; border-radius: 3px; }
 
 #game-buttons { display: flex; gap: .5rem; }
 
@@ -127,6 +129,46 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 #master-room-controls { display: flex; gap: .4rem; margin-top: .6rem; flex-wrap: wrap; }
 #master-room-controls button { font-size: .8rem; padding: .3rem .6rem; }
 
+.player .stuck-badge { color: var(--bad); font-size: .72rem; font-weight: 700; }
+.player.stuck .mini-board { outline: 2px solid var(--bad); }
+
+/* chat */
+#chat-log {
+	max-height: 160px; overflow-y: auto; display: flex; flex-direction: column;
+	gap: .25rem; margin-bottom: .5rem; font-size: .85rem;
+}
+.chat-msg b { color: var(--accent); font-weight: 700; }
+.chat-msg.mine b { color: var(--gold); }
+#chat-form { display: flex; gap: .4rem; }
+#chat-input { flex: 1; min-width: 0; }
+
+/* sign in with Google */
+button.google {
+	display: inline-flex; align-items: center; gap: .5rem; justify-content: center;
+	width: 100%; font-weight: 600; padding: .55rem .8rem;
+}
+#btn-login { font-size: .75rem; padding: .15rem .5rem; }
+
+/* solved celebration */
+.board-pop { animation: board-pop .55s ease; }
+@keyframes board-pop {
+	0% { transform: scale(1); }
+	35% { transform: scale(1.05) rotate(1deg); }
+	70% { transform: scale(.99) rotate(-.5deg); }
+	100% { transform: scale(1); }
+}
+#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 60; overflow: hidden; }
+#confetti i {
+	position: absolute; top: 55%; width: 9px; height: 14px; border-radius: 2px;
+	animation: confetti var(--t) cubic-bezier(.2, .55, .45, 1) forwards;
+	opacity: 0;
+}
+@keyframes confetti {
+	0% { transform: translate(0, 0) rotate(0); opacity: 1; }
+	30% { transform: translate(calc(var(--dx) * .55), calc(var(--up) * -1)) rotate(calc(var(--rot) * .4)); opacity: 1; }
+	100% { transform: translate(var(--dx), 60vh) rotate(var(--rot)); opacity: 0; }
+}
+
 dialog {
 	border: none; border-radius: 16px; background: var(--surface); color: var(--text);
 	max-width: 90vw; padding: 1.2rem; text-align: center;
@@ -141,6 +183,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 	main { max-width: 880px; display: grid; grid-template-columns: 1fr 280px; align-items: start; }
 	#room-strip, #banner { grid-column: 1 / -1; }
 	#lobby { grid-column: 1; }
-	#players-panel { grid-column: 2; grid-row: 3 / 6; }
+	#players-panel { grid-column: 2; }
+	#chat-panel { grid-column: 2; }
 	#play-area { grid-column: 1; }
 }

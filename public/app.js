@@ -1,4 +1,4 @@
-import { PIECES, PIECE_INDEX, cellIndex, nameToIndex, solve, countSolutions } from '/solver.js';
+import { PIECES, PIECE_INDEX, cellIndex, nameToIndex, solve, countSolutions, enumerateSolutions } from '/solver.js';
 import qrcode from '/vendor/qrcode.mjs';
 
 const $ = id => document.getElementById(id);
@@ -31,11 +31,14 @@ async function ensureIdentity() {
 		localStorage.setItem('gs-name', me.name);
 	}
 	$('identity').textContent = me.name + (me.email ? '' : ' (guest)');
+	$('btn-login').hidden = !!me.email;
 }
+const signIn = () => location.href = '/login?next=' + encodeURIComponent(location.pathname);
+$('btn-login').addEventListener('click', signIn);
+$('btn-google').addEventListener('click', signIn);
 $('btn-logout').addEventListener('click', () => {
 	localStorage.removeItem('gs-name');
-	if (me.email) location.href = '/cdn-cgi/access/logout';
-	else location.reload();
+	location.href = '/logout';
 });
 
 // ---------- room & connection ----------
@@ -52,6 +55,7 @@ async function enterRoom(code) {
 	$('landing').hidden = true;
 	$('room-strip').hidden = false;
 	$('players-panel').hidden = false;
+	$('chat-panel').hidden = false;
 	$('room-label').textContent = `ROOM ${roomCode}`;
 	await ensureIdentity();
 	connect();
@@ -116,7 +120,12 @@ $('btn-propose').addEventListener('click', () => {
 	const bank = puzzleData.banks[tier];
 	const cells = bank[Math.floor(Math.random() * bank.length)].split(' ').map(nameToIndex);
 	const count = countSolutions(cells, 25000);
-	send({ t: 'propose', puzzle: { cells, tier, count, showCount: $('show-count').checked } });
+	send({ t: 'propose', puzzle: {
+		cells, tier, count,
+		showCount: $('show-count').checked,
+		showDead: $('show-deadend').checked,
+		explore: $('explore-mode').checked,
+	} });
 });
 $('btn-agree').addEventListener('click', () => send({ t: 'agree' }));
 $('btn-force').addEventListener('click', () => send({ t: 'start' }));
@@ -132,6 +141,9 @@ let placed = new Map();
 let selected = null, orientIdx = 0, hoverCell = -1, armedCell = -1;
 let startTime = 0, timerHandle = 0, finishedLocal = false;
 let lastPhase = null;
+// solution-space explorer
+let exploreSols = [], exploreIdx = 0, exploreTimer = 0, autoCompleting = false;
+const EXPLORE_CAP = 256;
 
 const tierLabel = key => puzzleData?.tiers.find(t => t.key === key)?.label || key;
 
@@ -153,11 +165,17 @@ const pieceAt = cell => {
 };
 
 function ghostCells() {
+	// Anchor the piece around the touched cell (not its top-left corner) and
+	// clamp inside the board, so a tap lands the piece under your finger and
+	// edge taps still produce an in-board preview.
 	if (selected === null || hoverCell < 0 || placed.has(selected)) return null;
 	const orients = PIECES[PIECE_INDEX[selected]].orients;
 	const orient = orients[orientIdx % orients.length];
-	const r = Math.floor(hoverCell / 6), c = hoverCell % 6;
-	return orient.map(([dr, dc]) => (r + dr < 6 && c + dc < 6) ? cellIndex(r + dr, c + dc) : -1);
+	const maxR = Math.max(...orient.map(o => o[0])), maxC = Math.max(...orient.map(o => o[1]));
+	let r = Math.floor(hoverCell / 6) - (maxR >> 1), c = hoverCell % 6 - (maxC >> 1);
+	r = Math.max(0, Math.min(5 - maxR, r));
+	c = Math.max(0, Math.min(5 - maxC, c));
+	return orient.map(([dr, dc]) => cellIndex(r + dr, c + dc));
 }
 const ghostValid = cells =>
 	cells && cells.every(i => i >= 0 && !blockers.includes(i) && !pieceAt(i));
@@ -177,23 +195,72 @@ function renderBoard() {
 		const key = pieceAt(i);
 		el.style.background = key ? PIECES[PIECE_INDEX[key]].color : '';
 	}
+	renderExploreOverlay();
 	renderTray();
 }
 
+// ---------- solution-space explorer ----------
+// The board cycles through the solutions that are still possible, drawn as
+// translucent piece colors on the empty cells. Placing a piece narrows the
+// space; at exactly one remaining solution the board finishes itself.
+function exploreActive() {
+	return game?.phase === 'playing' && game.puzzle?.explore && !finishedLocal;
+}
+
+function renderExploreOverlay() {
+	if (!exploreActive() || !exploreSols.length) return;
+	const sol = exploreSols[exploreIdx % exploreSols.length];
+	for (const [key, cells] of Object.entries(sol)) {
+		if (placed.has(key)) continue;
+		for (const i of cells)
+			if (!blockers.includes(i) && !pieceAt(i))
+				cellEls[i].style.background = PIECES[PIECE_INDEX[key]].color + '55';
+	}
+}
+
+function updateExplore() {
+	if (!exploreActive()) return;
+	exploreSols = enumerateSolutions(blockers, Object.fromEntries(placed), EXPLORE_CAP);
+	exploreIdx = 0;
+	const n = exploreSols.length;
+	$('difficulty-label').textContent =
+		`${tierLabel(game.puzzle.tier)} — exploring ${n}${n >= EXPLORE_CAP ? '+' : ''} solution${n === 1 ? '' : 's'}`;
+	if (n === 1 && placed.size > 0 && !autoCompleting) autoComplete(exploreSols[0]);
+}
+
+function autoComplete(sol) {
+	autoCompleting = true;
+	const rest = Object.entries(sol).filter(([key]) => !placed.has(key));
+	const step = () => {
+		if (game?.phase !== 'playing' || finishedLocal) { autoCompleting = false; return; }
+		const next = rest.shift();
+		if (!next) { autoCompleting = false; return; }
+		const [key, cells] = next;
+		placed.set(key, cells);
+		send({ t: 'place', piece: key, cells });
+		selected = null; armedCell = -1;
+		afterChange();
+		setTimeout(step, 280);
+	};
+	step();
+}
+
 function renderTray() {
+	// Every piece sits in a fixed 4x4 box so rotating never resizes a tile
+	// or reflows the tray — the piece just spins in place, centered.
 	trayEl.innerHTML = '';
 	for (const piece of PIECES) {
 		const orients = piece.orients;
 		const orient = orients[piece.key === selected ? orientIdx % orients.length : 0];
 		const maxR = Math.max(...orient.map(o => o[0])), maxC = Math.max(...orient.map(o => o[1]));
+		const offR = Math.floor((4 - (maxR + 1)) / 2), offC = Math.floor((4 - (maxC + 1)) / 2);
 		const el = document.createElement('div');
 		el.className = 'tray-piece' + (piece.key === selected ? ' selected' : '') + (placed.has(piece.key) ? ' placed' : '');
-		el.style.gridTemplateColumns = `repeat(${maxC + 1}, 15px)`;
-		for (let r = 0; r <= maxR; r++)
-			for (let c = 0; c <= maxC; c++) {
+		for (let r = 0; r < 4; r++)
+			for (let c = 0; c < 4; c++) {
 				const d = document.createElement('div');
 				d.className = 'pc';
-				d.style.background = orient.some(([dr, dc]) => dr === r && dc === c) ? piece.color : 'transparent';
+				d.style.background = orient.some(([dr, dc]) => dr + offR === r && dc + offC === c) ? piece.color : 'transparent';
 				el.appendChild(d);
 			}
 		el.addEventListener('click', () => {
@@ -216,21 +283,58 @@ document.addEventListener('keydown', e => {
 function onCellPointer(i, ev) {
 	if (game?.phase !== 'playing' || finishedLocal) return;
 	const onPiece = pieceAt(i);
-	if (onPiece) {					// pick a placed piece back up
-		placed.delete(onPiece);
-		send({ t: 'remove', piece: onPiece });
-		finishedLocal = false;
-		afterChange();
+	const haveSelection = selected !== null && !placed.has(selected);
+
+	// Nothing selected: tapping a placed piece picks it up (and re-selects it
+	// in its current orientation, ready to move).
+	if (!haveSelection) {
+		if (onPiece) pickUp(onPiece);
 		return;
 	}
+
+	hoverCell = i;
 	if (ev.pointerType === 'touch') {
-		// two-tap on touch: first tap previews, second tap on same cell places
-		hoverCell = i;
-		if (armedCell === i && ghostValid(ghostCells())) placeSelected();
-		else { armedCell = i; renderGhost(); }
+		// Two-tap on touch: first tap previews, second tap on the same cell
+		// places. While a piece is selected, a tap never steals a placed
+		// piece — except a deliberate second tap on an occupied cell, which
+		// means "no, I want THAT one back".
+		if (armedCell === i) {
+			if (ghostValid(ghostCells())) placeSelected();
+			else if (onPiece) pickUp(onPiece);
+			return;
+		}
+		armedCell = i;
+		renderGhost();
 		return;
 	}
-	if (ghostValid(ghostCells())) placeSelected();	// mouse: hover already previews
+	// mouse: hover already previews
+	if (ghostValid(ghostCells())) placeSelected();
+	else if (onPiece) pickUp(onPiece);
+}
+
+function pickUp(key) {
+	const cells = placed.get(key);
+	placed.delete(key);
+	send({ t: 'remove', piece: key });
+	finishedLocal = false;
+	selected = key;
+	orientIdx = orientIndexFor(key, cells);
+	armedCell = -1;
+	afterChange();
+}
+
+// Which orientation index matches an already-placed set of cells?
+function orientIndexFor(key, cells) {
+	const r0 = Math.min(...cells.map(c => Math.floor(c / 6)));
+	const c0 = Math.min(...cells.map(c => c % 6));
+	const got = new Set(cells.map(c => (Math.floor(c / 6) - r0) * 6 + (c % 6 - c0)));
+	const orients = PIECES[PIECE_INDEX[key]].orients;
+	for (let k = 0; k < orients.length; k++) {
+		const minR = Math.min(...orients[k].map(o => o[0]));
+		const minC = Math.min(...orients[k].map(o => o[1]));
+		if (orients[k].every(([dr, dc]) => got.has((dr - minR) * 6 + (dc - minC)))) return k;
+	}
+	return 0;
 }
 
 function placeSelected() {
@@ -247,7 +351,10 @@ $('btn-clear').addEventListener('click', () => {
 	afterChange();
 });
 
+let lastStuckSent = false;
+
 function afterChange() {
+	updateExplore();
 	renderBoard(); renderGhost();
 	const ind = $('solvable-indicator');
 	const covered = [...placed.values()].flat().length + blockers.length === 36;
@@ -256,10 +363,40 @@ function afterChange() {
 		clearInterval(timerHandle);
 		ind.className = 'won';
 		send({ t: 'finish', ms: Math.round(performance.now() - startTime) });
+		celebrate();
 		return;
 	}
-	if (!finishedLocal)
-		ind.className = solve(blockers, Object.fromEntries(placed)) ? 'ok' : 'dead';
+	if (!finishedLocal) {
+		// Always compute solvability and tell the room when we're stuck —
+		// opponents get to enjoy that. Whether WE get warned is the puzzle
+		// master's call (showDead), because the warning is a big hint.
+		const solvable = !!solve(blockers, Object.fromEntries(placed));
+		ind.className = game?.puzzle?.showDead === false ? '' : (solvable ? 'ok' : 'dead');
+		if (!solvable !== lastStuckSent) {
+			lastStuckSent = !solvable;
+			send({ t: 'stuck', stuck: !solvable });
+		}
+	}
+}
+
+// ---------- celebration ----------
+function celebrate() {
+	boardEl.classList.add('board-pop');
+	boardEl.addEventListener('animationend', () => boardEl.classList.remove('board-pop'), { once: true });
+	const burst = document.createElement('div');
+	burst.id = 'confetti';
+	for (let k = 0; k < 90; k++) {
+		const d = document.createElement('i');
+		d.style.setProperty('--dx', ((Math.random() * 2 - 1) * 55).toFixed(1) + 'vw');
+		d.style.setProperty('--up', (25 + Math.random() * 60).toFixed(1) + 'vh');
+		d.style.setProperty('--rot', ((Math.random() * 2 - 1) * 900).toFixed(0) + 'deg');
+		d.style.setProperty('--t', (1.7 + Math.random() * 1.3).toFixed(2) + 's');
+		d.style.background = PIECES[k % PIECES.length].color;
+		d.style.left = (50 + (Math.random() * 2 - 1) * 12).toFixed(1) + '%';
+		burst.appendChild(d);
+	}
+	document.body.appendChild(burst);
+	setTimeout(() => burst.remove(), 3200);
 }
 
 // ---------- server state -> UI ----------
@@ -272,6 +409,7 @@ function applyState(g, ps) {
 	if (playing && lastPhase !== 'playing') {
 		blockers = g.puzzle.cells;
 		placed = new Map(); selected = null; armedCell = -1; finishedLocal = false;
+		lastStuckSent = false; autoCompleting = false;
 		startTime = performance.now();
 		clearInterval(timerHandle);
 		timerHandle = setInterval(() =>
@@ -280,9 +418,17 @@ function applyState(g, ps) {
 		$('timer').textContent = '0.0s';
 		const hint = g.puzzle.showCount ? ` — ${g.puzzle.count.toLocaleString()} solutions` : '';
 		$('difficulty-label').textContent = `${tierLabel(g.puzzle.tier)}${hint}`;
+		updateExplore();
 		renderBoard(); renderGhost();
+		clearInterval(exploreTimer);
+		if (g.puzzle.explore)
+			exploreTimer = setInterval(() => {
+				if (!exploreActive() || exploreSols.length < 2) return;
+				exploreIdx++;
+				renderBoard(); renderGhost();
+			}, 700);
 	}
-	if (!playing) clearInterval(timerHandle);
+	if (!playing) { clearInterval(timerHandle); clearInterval(exploreTimer); }
 	lastPhase = g.phase;
 
 	$('play-area').hidden = !playing;
@@ -296,7 +442,11 @@ function applyState(g, ps) {
 	// proposal / agreement
 	$('proposal-card').hidden = !proposed;
 	if (proposed) {
-		const hint = g.proposal.showCount ? ` (${g.proposal.count.toLocaleString()} solutions)` : '';
+		const bits = [];
+		if (g.proposal.showCount) bits.push(`${g.proposal.count.toLocaleString()} solutions`);
+		if (g.proposal.explore) bits.push('explorer mode');
+		if (g.proposal.showDead === false) bits.push('no dead-end warnings — good luck');
+		const hint = bits.length ? ` (${bits.join(', ')})` : '';
 		$('proposal-text').textContent = `${g.master} proposes: ${tierLabel(g.proposal.tier)}${hint}`;
 		$('btn-agree').hidden = g.agreed.includes(me.name);
 		$('btn-force').hidden = !isMaster;
@@ -316,6 +466,7 @@ function applyState(g, ps) {
 	$('master-room-controls').hidden = !isMaster;
 	$('btn-end-round').hidden = !playing;
 	renderPlayers(g, ps);
+	renderChat(g.chat);
 }
 
 function renderPlayers(g, ps) {
@@ -342,15 +493,49 @@ function renderPlayers(g, ps) {
 		const crown = document.createElement('span');
 		crown.className = 'crown';
 		crown.textContent = p.name === g.master ? '👑' : '';
+		// Stuck flag: shown on OTHER players only — half the fun is knowing
+		// they're at a dead end when they might not know it themselves.
+		const stuck = document.createElement('span');
+		stuck.className = 'stuck-badge';
+		if (g.phase === 'playing' && p.stuck && p.id !== myId && p.finishedMs == null) {
+			stuck.textContent = '🚧 dead end';
+			el.classList.add('stuck');
+		}
 		const time = document.createElement('span');
 		time.className = 'ptime';
 		time.textContent = p.finishedMs != null ? (p.finishedMs / 1000).toFixed(1) + 's' : '';
 		const pts = document.createElement('span');
 		pts.className = 'pts';
 		pts.textContent = g.scores[p.name] ?? 0;
-		el.append(mini, name, crown, time, pts);
+		el.append(mini, name, crown, stuck, time, pts);
 		playersEl.appendChild(el);
 	}
+}
+
+// ---------- chat ----------
+$('chat-form').addEventListener('submit', ev => {
+	ev.preventDefault();
+	const text = $('chat-input').value.trim();
+	if (!text) return;
+	send({ t: 'chat', text });
+	$('chat-input').value = '';
+});
+
+let lastChatLen = -1;
+function renderChat(chat = []) {
+	if (chat.length === lastChatLen) return;
+	lastChatLen = chat.length;
+	const box = $('chat-log');
+	box.innerHTML = '';
+	for (const m of chat) {
+		const row = document.createElement('div');
+		row.className = 'chat-msg' + (m.name === me.name ? ' mine' : '');
+		const who = document.createElement('b');
+		who.textContent = m.name;
+		row.append(who, document.createTextNode(' ' + m.text));
+		box.appendChild(row);
+	}
+	box.scrollTop = box.scrollHeight;
 }
 
 // ---------- go ----------
