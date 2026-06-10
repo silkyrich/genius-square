@@ -1,46 +1,173 @@
-import {
-	PIECES, PIECE_INDEX, cellIndex, cellName, nameToIndex,
-	solve, countSolutions, rollDice,
-} from '/solver.js';
+import { PIECES, PIECE_INDEX, cellIndex, nameToIndex, solve, countSolutions } from '/solver.js';
+import qrcode from '/vendor/qrcode.mjs';
 
 const $ = id => document.getElementById(id);
 const boardEl = $('board'), trayEl = $('tray'), playersEl = $('players');
 
-// ---------- state ----------
-let blockers = [];			// 7 cell indexes
-let placed = new Map();			// pieceKey -> cells[]
-let selected = null;			// pieceKey
-let orientIdx = 0;
-let hoverCell = -1;
-let startTime = 0, timerHandle = 0, finishedMs = null;
-let ws = null, roomCode = null, myId = null;
-let me = { name: 'guest-' + Math.random().toString(36).slice(2, 6) };
-let uniqueData = null;
+// ---------- theme ----------
+const themePref = localStorage.getItem('gs-theme')
+	|| (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+document.documentElement.dataset.theme = themePref;
+$('btn-theme').addEventListener('click', () => {
+	const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+	document.documentElement.dataset.theme = next;
+	localStorage.setItem('gs-theme', next);
+});
 
 // ---------- identity ----------
-fetch('/api/me').then(r => r.json()).then(d => {
-	if (d.email) me.name = d.email;
-	$('identity').textContent = d.email ? `signed in as ${d.email}` : `playing as ${me.name} (no login)`;
-}).catch(() => { $('identity').textContent = `playing as ${me.name}`; });
+let me = { name: null, email: null };
 
-fetch('/data/unique.json').then(r => r.json()).then(d => { uniqueData = d; });
+async function ensureIdentity() {
+	try {
+		const d = await (await fetch('/api/me')).json();
+		if (d.email) { me.email = d.email; me.name = d.email; }
+	} catch {}
+	if (!me.name) me.name = localStorage.getItem('gs-name');
+	if (!me.name) {
+		const modal = $('name-modal');
+		modal.showModal();
+		await new Promise(res => modal.addEventListener('close', res, { once: true }));
+		me.name = $('name-input').value.trim() || 'anonymous';
+		localStorage.setItem('gs-name', me.name);
+	}
+	$('identity').textContent = me.name + (me.email ? '' : ' (guest)');
+}
+$('btn-logout').addEventListener('click', () => {
+	localStorage.removeItem('gs-name');
+	if (me.email) location.href = '/cdn-cgi/access/logout';
+	else location.reload();
+});
 
-// ---------- board rendering ----------
+// ---------- room & connection ----------
+let ws = null, roomCode = null, myId = null, game = null, players = [];
+let kicked = false;
+
+async function enterRoom(code) {
+	if (code) roomCode = code;
+	else {
+		const r = await (await fetch('/api/rooms', { method: 'POST' })).json();
+		roomCode = r.code;
+	}
+	history.replaceState(null, '', `/r/${roomCode}`);
+	$('landing').hidden = true;
+	$('room-strip').hidden = false;
+	$('players-panel').hidden = false;
+	$('room-label').textContent = `ROOM ${roomCode}`;
+	await ensureIdentity();
+	connect();
+}
+
+function connect() {
+	const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+	ws = new WebSocket(`${proto}://${location.host}/ws/${roomCode}?name=${encodeURIComponent(me.name)}`);
+	ws.addEventListener('message', ev => {
+		const m = JSON.parse(ev.data);
+		if (m.t === 'state') { myId = m.you; applyState(m.game, m.players); }
+		if (m.t === 'kicked') {
+			kicked = true;
+			ws.close();
+			$('room-label').textContent = m.reason;
+		}
+	});
+	ws.addEventListener('close', () => {
+		if (!kicked) setTimeout(connect, 1500);	// auto-reconnect
+	});
+}
+const send = msg => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); };
+
+// ---------- share ----------
+const roomUrl = () => `${location.origin}/r/${roomCode}`;
+$('btn-share').addEventListener('click', async () => {
+	const data = { title: 'Genius Square', text: `Race me at Genius Square — room ${roomCode}`, url: roomUrl() };
+	if (navigator.share) { try { await navigator.share(data); } catch {} }
+	else {
+		await navigator.clipboard.writeText(roomUrl());
+		$('btn-share').textContent = 'Copied!';
+		setTimeout(() => $('btn-share').textContent = 'Share room', 1500);
+	}
+});
+$('btn-qr').addEventListener('click', () => {
+	const qr = qrcode(0, 'M');
+	qr.addData(roomUrl());
+	qr.make();
+	$('qr-box').innerHTML = qr.createSvgTag({ cellSize: 8, margin: 4, scalable: true });
+	$('qr-link').textContent = roomUrl();
+	$('qr-modal').showModal();
+});
+
+// ---------- puzzles & difficulty ----------
+let puzzleData = null;
+fetch('/data/puzzles.json').then(r => r.json()).then(d => {
+	puzzleData = d;
+	const sel = $('tier-select');
+	sel.innerHTML = '';
+	for (const t of d.tiers) {
+		const o = document.createElement('option');
+		o.value = t.key;
+		o.textContent = `${t.label} (${t.min === 1 && t.max === 1 ? 'one solution' : t.max ? `${t.min}–${t.max} solutions` : `${t.min}+ solutions`})`;
+		sel.appendChild(o);
+	}
+	sel.value = 'medium';
+});
+
+$('btn-propose').addEventListener('click', () => {
+	if (!puzzleData) return;
+	const tier = $('tier-select').value;
+	const bank = puzzleData.banks[tier];
+	const cells = bank[Math.floor(Math.random() * bank.length)].split(' ').map(nameToIndex);
+	const count = countSolutions(cells, 25000);
+	send({ t: 'propose', puzzle: { cells, tier, count, showCount: $('show-count').checked } });
+});
+$('btn-agree').addEventListener('click', () => send({ t: 'agree' }));
+$('btn-force').addEventListener('click', () => send({ t: 'start' }));
+$('btn-end-round').addEventListener('click', () => send({ t: 'endRound' }));
+$('btn-clear-room').addEventListener('click', () => send({ t: 'clearRound' }));
+$('btn-reset-scores').addEventListener('click', () => {
+	if (confirm('Reset all scores to zero?')) send({ t: 'resetScores' });
+});
+
+// ---------- local play state ----------
+let blockers = [];
+let placed = new Map();
+let selected = null, orientIdx = 0, hoverCell = -1, armedCell = -1;
+let startTime = 0, timerHandle = 0, finishedLocal = false;
+let lastPhase = null;
+
+const tierLabel = key => puzzleData?.tiers.find(t => t.key === key)?.label || key;
+
+// ---------- board ----------
 const cellEls = [];
 for (let i = 0; i < 36; i++) {
 	const el = document.createElement('div');
 	el.className = 'cell';
-	el.dataset.idx = i;
+	el.addEventListener('pointerdown', ev => onCellPointer(i, ev), { passive: true });
 	el.addEventListener('mouseenter', () => { hoverCell = i; renderGhost(); });
-	el.addEventListener('mouseleave', () => { hoverCell = -1; renderGhost(); });
-	el.addEventListener('click', () => onCellClick(i));
+	el.addEventListener('mouseleave', () => { if (armedCell < 0) { hoverCell = -1; renderGhost(); } });
 	boardEl.appendChild(el);
 	cellEls.push(el);
 }
 
-function pieceAt(cell) {
+const pieceAt = cell => {
 	for (const [key, cells] of placed) if (cells.includes(cell)) return key;
 	return null;
+};
+
+function ghostCells() {
+	if (selected === null || hoverCell < 0 || placed.has(selected)) return null;
+	const orients = PIECES[PIECE_INDEX[selected]].orients;
+	const orient = orients[orientIdx % orients.length];
+	const r = Math.floor(hoverCell / 6), c = hoverCell % 6;
+	return orient.map(([dr, dc]) => (r + dr < 6 && c + dc < 6) ? cellIndex(r + dr, c + dc) : -1);
+}
+const ghostValid = cells =>
+	cells && cells.every(i => i >= 0 && !blockers.includes(i) && !pieceAt(i));
+
+function renderGhost() {
+	cellEls.forEach(el => el.classList.remove('ghost-ok', 'ghost-bad'));
+	const cells = ghostCells();
+	if (!cells) return;
+	const valid = ghostValid(cells);
+	for (const i of cells) if (i >= 0) cellEls[i].classList.add(valid ? 'ghost-ok' : 'ghost-bad');
 }
 
 function renderBoard() {
@@ -53,31 +180,15 @@ function renderBoard() {
 	renderTray();
 }
 
-function ghostCells() {
-	if (selected === null || hoverCell < 0 || placed.has(selected)) return null;
-	const orient = PIECES[PIECE_INDEX[selected]].orients[orientIdx % PIECES[PIECE_INDEX[selected]].orients.length];
-	const r = Math.floor(hoverCell / 6), c = hoverCell % 6;
-	const cells = orient.map(([dr, dc]) => (r + dr < 6 && c + dc < 6) ? cellIndex(r + dr, c + dc) : -1);
-	return cells;
-}
-
-function renderGhost() {
-	cellEls.forEach(el => el.classList.remove('ghost-ok', 'ghost-bad'));
-	const cells = ghostCells();
-	if (!cells) return;
-	const valid = cells.every(i => i >= 0 && !blockers.includes(i) && !pieceAt(i));
-	for (const i of cells) if (i >= 0) cellEls[i].classList.add(valid ? 'ghost-ok' : 'ghost-bad');
-}
-
-// ---------- tray ----------
 function renderTray() {
 	trayEl.innerHTML = '';
 	for (const piece of PIECES) {
-		const orient = piece.orients[piece.key === selected ? orientIdx % piece.orients.length : 0];
+		const orients = piece.orients;
+		const orient = orients[piece.key === selected ? orientIdx % orients.length : 0];
 		const maxR = Math.max(...orient.map(o => o[0])), maxC = Math.max(...orient.map(o => o[1]));
 		const el = document.createElement('div');
 		el.className = 'tray-piece' + (piece.key === selected ? ' selected' : '') + (placed.has(piece.key) ? ' placed' : '');
-		el.style.gridTemplateColumns = `repeat(${maxC + 1}, 16px)`;
+		el.style.gridTemplateColumns = `repeat(${maxC + 1}, 15px)`;
 		for (let r = 0; r <= maxR; r++)
 			for (let c = 0; c <= maxC; c++) {
 				const d = document.createElement('div');
@@ -87,144 +198,132 @@ function renderTray() {
 			}
 		el.addEventListener('click', () => {
 			if (placed.has(piece.key)) return;
-			if (selected === piece.key) orientIdx++;	// click again = rotate
+			if (selected === piece.key) orientIdx++;	// tap again = rotate
 			else { selected = piece.key; orientIdx = 0; }
+			armedCell = -1;
 			renderTray(); renderGhost();
 		});
 		trayEl.appendChild(el);
 	}
 }
 
-// ---------- interaction ----------
-function onCellClick(i) {
-	if (finishedMs !== null) return;
+function rotate() { orientIdx++; renderTray(); renderGhost(); }
+$('btn-rotate').addEventListener('click', rotate);
+document.addEventListener('keydown', e => {
+	if (e.key === 'r' || e.key === 'R' || e.key === 'f' || e.key === 'F') rotate();
+});
+
+function onCellPointer(i, ev) {
+	if (game?.phase !== 'playing' || finishedLocal) return;
 	const onPiece = pieceAt(i);
-	if (onPiece) {						// pick a piece back up
+	if (onPiece) {					// pick a placed piece back up
 		placed.delete(onPiece);
 		send({ t: 'remove', piece: onPiece });
+		finishedLocal = false;
 		afterChange();
 		return;
 	}
+	if (ev.pointerType === 'touch') {
+		// two-tap on touch: first tap previews, second tap on same cell places
+		hoverCell = i;
+		if (armedCell === i && ghostValid(ghostCells())) placeSelected();
+		else { armedCell = i; renderGhost(); }
+		return;
+	}
+	if (ghostValid(ghostCells())) placeSelected();	// mouse: hover already previews
+}
+
+function placeSelected() {
 	const cells = ghostCells();
-	if (!cells) return;
-	if (!cells.every(c => c >= 0 && !blockers.includes(c) && !pieceAt(c))) return;
 	placed.set(selected, cells);
 	send({ t: 'place', piece: selected, cells });
-	selected = null;
+	selected = null; armedCell = -1;
 	afterChange();
 }
 
-document.addEventListener('keydown', e => {
-	if (e.key === 'r' || e.key === 'R' || e.key === 'f' || e.key === 'F') {
-		orientIdx++; renderTray(); renderGhost();
-	}
+$('btn-clear').addEventListener('click', () => {
+	placed.clear(); finishedLocal = false;
+	send({ t: 'clear' });
+	afterChange();
 });
 
 function afterChange() {
 	renderBoard(); renderGhost();
-	const covered = placed.size && [...placed.values()].flat().length + blockers.length === 36;
 	const ind = $('solvable-indicator');
-	if (covered) {
-		finishedMs = performance.now() - startTime;
+	const covered = [...placed.values()].flat().length + blockers.length === 36;
+	if (covered && !finishedLocal) {
+		finishedLocal = true;
 		clearInterval(timerHandle);
 		ind.className = 'won';
-		send({ t: 'finish', ms: Math.round(finishedMs) });
+		send({ t: 'finish', ms: Math.round(performance.now() - startTime) });
 		return;
 	}
-	// live solvability check: can the remaining pieces still complete the board?
-	const fixed = Object.fromEntries(placed);
-	ind.className = solve(blockers, fixed) ? 'ok' : 'dead';
+	if (!finishedLocal)
+		ind.className = solve(blockers, Object.fromEntries(placed)) ? 'ok' : 'dead';
 }
 
-// ---------- puzzles ----------
-function setPuzzle(cells, { broadcast = true } = {}) {
-	blockers = cells;
-	placed.clear(); selected = null; finishedMs = null;
-	startTime = performance.now();
-	clearInterval(timerHandle);
-	timerHandle = setInterval(() =>
-		$('timer').textContent = ((performance.now() - startTime) / 1000).toFixed(1) + 's', 100);
-	$('solvable-indicator').className = '';
-	const n = countSolutions(blockers, 25000);
-	$('difficulty').textContent = `${n.toLocaleString()} solution${n === 1 ? '' : 's'} — blockers: ${blockers.map(cellName).join(' ')}`;
-	renderBoard(); renderGhost();
-	if (broadcast) send({ t: 'puzzle', blockers: cells });
-}
+// ---------- server state -> UI ----------
+function applyState(g, ps) {
+	game = g; players = ps;
+	const isMaster = g.master === me.name;
+	const inLobby = g.phase === 'lobby', proposed = g.phase === 'proposed', playing = g.phase === 'playing';
 
-function newPuzzle() {
-	const mode = $('difficulty-select').value;
-	if (mode === 'dice' || !uniqueData) {
-		setPuzzle(rollDice());
-	} else if (mode === 'unique') {
-		const b = uniqueData.uniqueBoards[Math.floor(Math.random() * uniqueData.uniqueBoards.length)];
-		setPuzzle(b.map(nameToIndex));
-	} else {	// 'hard': random boards until one with 2..10 solutions (harder than any dice roll)
-		for (;;) {
-			const cells = [];
-			while (cells.length < 7) {
-				const c = Math.floor(Math.random() * 36);
-				if (!cells.includes(c)) cells.push(c);
-			}
-			const n = countSolutions(cells, 11);
-			if (n >= 2 && n <= 10) { setPuzzle(cells); break; }
-		}
+	// round transitions
+	if (playing && lastPhase !== 'playing') {
+		blockers = g.puzzle.cells;
+		placed = new Map(); selected = null; armedCell = -1; finishedLocal = false;
+		startTime = performance.now();
+		clearInterval(timerHandle);
+		timerHandle = setInterval(() =>
+			$('timer').textContent = ((performance.now() - startTime) / 1000).toFixed(1) + 's', 100);
+		$('solvable-indicator').className = '';
+		$('timer').textContent = '0.0s';
+		const hint = g.puzzle.showCount ? ` — ${g.puzzle.count.toLocaleString()} solutions` : '';
+		$('difficulty-label').textContent = `${tierLabel(g.puzzle.tier)}${hint}`;
+		renderBoard(); renderGhost();
 	}
+	if (!playing) clearInterval(timerHandle);
+	lastPhase = g.phase;
+
+	$('play-area').hidden = !playing;
+	$('lobby').hidden = playing;
+	$('lobby-title').textContent = proposed ? `Round ${g.round + 1}` :
+		(g.round === 0 ? 'New game' : `Round ${g.round} finished`);
+	$('master-controls').hidden = !(inLobby && isMaster);
+	if (inLobby && !isMaster)
+		$('lobby-title').textContent += ` — waiting for ${g.master} to set the puzzle`;
+
+	// proposal / agreement
+	$('proposal-card').hidden = !proposed;
+	if (proposed) {
+		const hint = g.proposal.showCount ? ` (${g.proposal.count.toLocaleString()} solutions)` : '';
+		$('proposal-text').textContent = `${g.master} proposes: ${tierLabel(g.proposal.tier)}${hint}`;
+		$('btn-agree').hidden = g.agreed.includes(me.name);
+		$('btn-force').hidden = !isMaster;
+		$('agreed-list').textContent = `ready: ${g.agreed.join(', ')} (${g.agreed.length}/${[...new Set(ps.map(p => p.name))].length})`;
+	}
+
+	// winner banner
+	const banner = $('banner');
+	if (inLobby && g.lastResult && g.lastResult.winner) {
+		banner.hidden = false;
+		banner.textContent = `🏆 ${g.lastResult.winner} wins round ${g.lastResult.round}! ` +
+			g.lastResult.order.map(o => `${o.name} ${(o.ms / 1000).toFixed(1)}s +${o.points}`).join(' · ');
+	} else banner.hidden = true;
+
+	// scores & players
+	$('round-label').textContent = g.round ? `round ${g.round}` : '';
+	$('master-room-controls').hidden = !isMaster;
+	$('btn-end-round').hidden = !playing;
+	renderPlayers(g, ps);
 }
 
-$('btn-new').addEventListener('click', newPuzzle);
-$('btn-clear').addEventListener('click', () => { placed.clear(); send({ t: 'clear' }); afterChange(); });
-$('btn-hint').addEventListener('click', () => {
-	const sol = solve(blockers, Object.fromEntries(placed));
-	if (!sol) { alert('No completion exists from here — pick a piece back up first.'); return; }
-	const key = PIECES.map(p => p.key).find(k => !placed.has(k) && sol[k]);
-	if (!key) return;
-	placed.set(key, sol[key]);
-	send({ t: 'place', piece: key, cells: sol[key] });
-	afterChange();
-});
-$('btn-solve').addEventListener('click', () => {
-	const sol = solve(blockers);
-	if (!sol) return;
-	placed = new Map(Object.entries(sol));
-	send({ t: 'board', placements: Object.fromEntries(placed) });
-	afterChange();
-});
-
-// ---------- multiplayer ----------
-function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
-
-function connect(code) {
-	const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-	ws = new WebSocket(`${proto}://${location.host}/ws/${code}?name=${encodeURIComponent(me.name)}`);
-	ws.addEventListener('open', () => {
-		roomCode = code;
-		$('room-status').textContent = `room ${code}`;
-	});
-	ws.addEventListener('message', ev => {
-		const m = JSON.parse(ev.data);
-		if (m.t === 'state') {
-			myId = m.you;
-			if (m.puzzle && m.puzzle.length) setPuzzle(m.puzzle, { broadcast: false });
-			renderPlayers(m.players);
-		}
-		if (m.t === 'puzzle') setPuzzle(m.blockers, { broadcast: false });
-		if (m.t === 'kicked') {
-			ws.close();
-			$('room-status').textContent = m.reason;
-		}
-	});
-	ws.addEventListener('close', () => { $('room-status').textContent = 'disconnected'; });
-}
-
-function renderPlayers(players) {
+function renderPlayers(g, ps) {
 	playersEl.innerHTML = '';
-	for (const p of players) {
+	const sorted = [...ps].sort((a, b) => (g.scores[b.name] || 0) - (g.scores[a.name] || 0));
+	for (const p of sorted) {
 		const el = document.createElement('div');
 		el.className = 'player';
-		const name = document.createElement('div');
-		name.className = 'pname';
-		name.innerHTML = `<span>${p.name}${p.id === myId ? ' (you)' : ''}</span>` +
-			(p.finishedMs != null ? `<span class="ptime">${(p.finishedMs / 1000).toFixed(1)}s</span>` : '');
 		const mini = document.createElement('div');
 		mini.className = 'mini-board';
 		const byCell = {};
@@ -233,25 +332,34 @@ function renderPlayers(players) {
 		for (let i = 0; i < 36; i++) {
 			const d = document.createElement('div');
 			d.className = 'mc';
-			if (blockers.includes(i)) d.style.background = '#888';
+			if (g.puzzle && g.puzzle.cells.includes(i)) d.style.background = '#999';
 			else if (byCell[i]) d.style.background = byCell[i];
 			mini.appendChild(d);
 		}
-		el.append(name, mini);
+		const name = document.createElement('span');
+		name.className = 'pname';
+		name.textContent = p.name + (p.id === myId ? ' (you)' : '');
+		const crown = document.createElement('span');
+		crown.className = 'crown';
+		crown.textContent = p.name === g.master ? '👑' : '';
+		const time = document.createElement('span');
+		time.className = 'ptime';
+		time.textContent = p.finishedMs != null ? (p.finishedMs / 1000).toFixed(1) + 's' : '';
+		const pts = document.createElement('span');
+		pts.className = 'pts';
+		pts.textContent = g.scores[p.name] ?? 0;
+		el.append(mini, name, crown, time, pts);
 		playersEl.appendChild(el);
 	}
 }
 
-$('btn-create-room').addEventListener('click', async () => {
-	const r = await fetch('/api/rooms', { method: 'POST' });
-	const { code } = await r.json();
-	$('room-code-input').value = code;
-	connect(code);
-});
-$('btn-join-room').addEventListener('click', () => {
-	const code = $('room-code-input').value.trim().toUpperCase();
-	if (code.length === 4) connect(code);
+// ---------- go ----------
+$('btn-start').addEventListener('click', () => enterRoom());
+$('btn-join').addEventListener('click', () => {
+	const code = $('join-code').value.trim().toUpperCase();
+	if (/^[A-Z]{4}$/.test(code)) enterRoom(code);
 });
 
-// ---------- go ----------
-newPuzzle();
+const urlRoom = location.pathname.match(/^\/r\/([A-Za-z]{4})$/);
+if (urlRoom) await enterRoom(urlRoom[1].toUpperCase());	// shared link: straight in
+else $('landing').hidden = false;			// fresh visit: landing page

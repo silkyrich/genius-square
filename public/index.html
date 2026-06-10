@@ -2,51 +2,119 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>Genius Square — race your friends</title>
+<meta name="description" content="Race friends to solve the puzzle. Real difficulty, from easy to one-solution brutal.">
+<meta property="og:title" content="Genius Square — race your friends">
+<meta property="og:description" content="Race friends to solve the puzzle. Real difficulty, from easy to one-solution brutal.">
+<meta property="og:image" content="https://genius-square.richmorgan.co.uk/og.jpg">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" href="/icon.png">
+<link rel="apple-touch-icon" href="/icon.png">
+<meta name="theme-color" content="#1c1a17">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <header>
+	<img src="/icon.png" alt="" id="logo">
 	<h1>Genius Square</h1>
-	<div id="identity" class="muted">…</div>
-	<div id="room-controls">
-		<button id="btn-create-room">Create room</button>
-		<input id="room-code-input" placeholder="CODE" maxlength="4" size="4" autocapitalize="characters">
-		<button id="btn-join-room">Join</button>
-		<span id="room-status" class="muted"></span>
+	<button id="btn-theme" title="dark / light">◐</button>
+	<div id="who">
+		<span id="identity"></span>
+		<button id="btn-logout">log out</button>
 	</div>
 </header>
 
 <main>
-	<section id="play-area">
+	<!-- landing page (shown at / until you start) -->
+	<section id="landing" hidden>
+		<img src="/og.jpg" alt="Genius Square board" id="hero-img">
+		<h2>Race your friends to solve the square.</h2>
+		<p class="muted">Pick a difficulty — from easy all the way to boards with a single
+		solution — then share your room with a link or QR code. First to finish wins the round.</p>
+		<button id="btn-start" class="primary big">Start playing</button>
+		<div id="join-row">
+			<input id="join-code" placeholder="or enter a room code" maxlength="4" autocapitalize="characters">
+			<button id="btn-join">Join</button>
+		</div>
+	</section>
+
+	<!-- share / room strip -->
+	<section id="room-strip" hidden>
+		<span id="room-label"></span>
+		<button id="btn-share">Share room</button>
+		<button id="btn-qr">QR</button>
+	</section>
+
+	<!-- winner / round banner -->
+	<div id="banner" hidden></div>
+
+	<!-- master lobby controls -->
+	<section id="lobby" hidden>
+		<h2 id="lobby-title"></h2>
+		<div id="master-controls" hidden>
+			<label>Difficulty
+				<select id="tier-select"></select>
+			</label>
+			<label id="hint-label"><input type="checkbox" id="show-count"> show solution count as a hint</label>
+			<button id="btn-propose" class="primary">Set the puzzle</button>
+		</div>
+		<div id="proposal-card" hidden>
+			<p id="proposal-text"></p>
+			<div id="agree-row">
+				<button id="btn-agree" class="primary">I'm ready</button>
+				<button id="btn-force" hidden>Start anyway</button>
+			</div>
+			<p id="agreed-list" class="muted"></p>
+		</div>
+	</section>
+
+	<!-- the game -->
+	<section id="play-area" hidden>
 		<div id="board" aria-label="game board"></div>
 		<div id="status-bar">
 			<span id="timer">0.0s</span>
 			<span id="solvable-indicator"></span>
-			<span id="difficulty" class="muted"></span>
+			<span id="difficulty-label"></span>
 		</div>
 		<div id="tray" aria-label="piece tray"></div>
-		<div id="controls">
-			<select id="difficulty-select">
-				<option value="dice">Classic dice roll</option>
-				<option value="hard">Harder than dice</option>
-				<option value="unique">Unique solution (expert)</option>
-			</select>
-			<button id="btn-new">New puzzle</button>
-			<button id="btn-hint">Hint</button>
-			<button id="btn-solve">Solve</button>
-			<button id="btn-clear">Clear</button>
+		<div id="game-buttons">
+			<button id="btn-rotate">⟳ rotate</button>
+			<button id="btn-clear">clear board</button>
 		</div>
-		<p class="muted" id="help">Click a piece, move the mouse over the board, click to place.
-		Press <kbd>R</kbd> to rotate/flip. Click a placed piece to pick it back up.</p>
 	</section>
 
-	<aside id="players-panel">
-		<h2>Players</h2>
+	<!-- players & scores -->
+	<section id="players-panel" hidden>
+		<div id="score-header">
+			<h2>Scores</h2>
+			<span id="round-label" class="muted"></span>
+		</div>
 		<div id="players"></div>
-	</aside>
+		<div id="master-room-controls" hidden>
+			<button id="btn-end-round">End round</button>
+			<button id="btn-clear-room">Clear room</button>
+			<button id="btn-reset-scores">Reset scores</button>
+		</div>
+	</section>
 </main>
+
+<!-- name modal -->
+<dialog id="name-modal">
+	<form method="dialog">
+		<h2>Who's playing?</h2>
+		<input id="name-input" placeholder="your name" maxlength="24" required autocomplete="name">
+		<button class="primary">Play</button>
+	</form>
+</dialog>
+
+<!-- QR modal -->
+<dialog id="qr-modal">
+	<div id="qr-box"></div>
+	<p id="qr-link" class="muted"></p>
+	<form method="dialog"><button>Close</button></form>
+</dialog>
 
 <script type="module" src="/app.js"></script>
 </body>

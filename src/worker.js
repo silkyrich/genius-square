@@ -1,6 +1,6 @@
 // Genius Square — Cloudflare Worker entry.
-// Serves the static game (assets binding), a small API, and routes
-// WebSocket connections to per-room Durable Objects.
+// Serves the static game (assets binding), a small API, room share pages
+// with per-room Open Graph tags, and routes WebSockets to room DOs.
 export { Room } from './room.js';
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ';	// no I/L/O/0/1 lookalikes
@@ -27,11 +27,27 @@ export default {
 		const wsMatch = url.pathname.match(/^\/ws\/([A-Z]{4})$/);
 		if (wsMatch) {
 			const id = env.ROOM.idFromName(wsMatch[1]);
-			// Pass the verified identity to the room; it beats the ?name= hint.
 			const headers = new Headers(request.headers);
 			const email = identityFrom(request);
 			if (email) headers.set('X-Player-Email', email);
 			return env.ROOM.get(id).fetch(new Request(request, { headers }));
+		}
+
+		// Room share links: serve the app shell with room-specific OG tags
+		// so pasted links unfurl nicely in chat apps.
+		const roomMatch = url.pathname.match(/^\/r\/([A-Za-z]{4})$/);
+		if (roomMatch) {
+			const code = roomMatch[1].toUpperCase();
+			const shell = await env.ASSETS.fetch(new Request(new URL('/', url)));
+			let html = await shell.text();
+			html = html
+				.replaceAll('Genius Square — race your friends',
+					`Join my Genius Square room ${code}!`)
+				.replace('content="Race friends to solve the puzzle.',
+					`content="Tap to join room ${code} and race.`);
+			return new Response(html, {
+				headers: { 'content-type': 'text/html; charset=utf-8' },
+			});
 		}
 
 		return env.ASSETS.fetch(request);
