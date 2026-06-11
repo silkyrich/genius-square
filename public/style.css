@@ -1,5 +1,4 @@
-/* Mobile-first. Light/dark via CSS variables on :root[data-theme];
-   the party's skin (Pokémon, Tiger Tea, ...) via :root[data-skin]. */
+/* Mobile-first. Light/dark via CSS variables on :root[data-theme]. */
 :root {
 	--bg: #f6f3ec;
 	--surface: #ffffff;
@@ -13,7 +12,6 @@
 	--ok: #16a34a;
 	--bad: #dc2626;
 	--gold: #d97706;
-	--bg-art: none;
 	font-family: system-ui, -apple-system, sans-serif;
 }
 :root[data-theme="dark"] {
@@ -27,27 +25,9 @@
 	--cell: #3a352e;
 }
 
-/* ---- party skins ---- */
-:root[data-skin="pokemon"] {
-	--accent: #e3350d;
-	--gold: #f5a623;
-	--bg-art: url('/themes/pokemon.jpg');
-}
-:root[data-skin="tigertea"] {
-	--accent: #d97706;
-	--gold: #b45309;
-	--bg-art: url('/themes/tigertea.jpg');
-}
-
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--text); }
-body::before {
-	content: ''; position: fixed; inset: 0; z-index: -1;
-	background: var(--bg-art) center / cover no-repeat;
-	opacity: .35;
-}
-:root[data-theme="dark"] body::before { opacity: .22; }
 
 header {
 	display: flex; align-items: center; gap: .6rem;
@@ -146,6 +126,43 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 #party-settings { display: flex; flex-direction: column; gap: .4rem; margin-top: .6rem; font-size: .85rem; }
 #master-room-controls { display: flex; gap: .4rem; margin-top: .6rem; flex-wrap: wrap; }
 #master-room-controls button { font-size: .8rem; padding: .3rem .6rem; }
+
+/* playlist & next-up */
+#round-buttons { display: flex; gap: .5rem; }
+#playlist-box { background: var(--surface); border-radius: 14px; padding: .6rem .8rem; display: flex; flex-direction: column; gap: .3rem; }
+.pl-item { display: flex; align-items: center; gap: .5rem; font-size: .88rem; }
+.pl-item.done { opacity: .45; }
+.pl-item.next .pl-label { font-weight: 700; }
+.pl-mark { width: 1.3em; text-align: center; color: var(--accent); font-weight: 700; }
+.pl-label { flex: 1; }
+.pl-x { font-size: .7rem; padding: .1rem .45rem; }
+#next-up {
+	background: var(--surface); border: 2px solid var(--accent); border-radius: 14px;
+	padding: .6rem .8rem; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+}
+#next-up-label { font-weight: 700; flex: 1; }
+#next-up button { font-size: .85rem; padding: .3rem .7rem; }
+
+/* host admin */
+.game-card { position: relative; }
+.gc-lock { position: absolute; top: 4px; right: 6px; font-size: .8rem; opacity: .35; }
+.gc-lock:hover { opacity: 1; }
+.game-card.locked { opacity: .42; }
+.game-card.locked .gc-lock { opacity: 1; }
+.player .boot { font-size: .65rem; padding: .1rem .4rem; color: var(--bad); }
+
+/* event toasts */
+#toasts {
+	position: fixed; top: 56px; left: 50%; transform: translateX(-50%);
+	display: flex; flex-direction: column; gap: .4rem; z-index: 70; pointer-events: none;
+}
+.toast {
+	background: var(--text); color: var(--bg); padding: .45rem .9rem; border-radius: 99px;
+	font-size: .85rem; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+	animation: toast-in .25s ease; transition: opacity .5s;
+}
+.toast.out { opacity: 0; }
+@keyframes toast-in { from { transform: translateY(-8px); opacity: 0; } }
 
 /* chat */
 #chat-log {

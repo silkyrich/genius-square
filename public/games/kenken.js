@@ -183,6 +183,9 @@ const CSS = `
 	background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px;
 }
 .kk-mini-fill { display: block; height: 100%; background: var(--accent); }
+.kk-mini-board { display: inline-grid; gap: 1px; padding: 2px; background: var(--board-bg); border-radius: 4px; }
+.kk-mini-c { background: color-mix(in srgb, var(--cell) 40%, transparent); }
+.kk-mini-n { display: block; font-size: .75rem; color: var(--muted); margin-top: 3px; }
 `;
 
 function injectStyles() {
@@ -300,7 +303,9 @@ export default {
 		function report() {
 			const filled = entries.filter(v => v).length;
 			const cagesDone = cages.filter(cageDone).length;
-			ctx.progress({ type: 'kenken', filled, total, cagesDone, cages: cages.length });
+			ctx.progress({ type: 'kenken', filled, total, cagesDone, cages: cages.length,
+				pct: filled / total,
+				mini: { w: n, h: n, p: ['#16a34a'], c: entries.map(v => v ? 0 : -1) } });
 			if (cagesDone === cages.length && isLatin(entries, n)) {
 				done = true;
 				selected = -1;
@@ -330,6 +335,7 @@ export default {
 		}
 		document.addEventListener('keydown', onKey);
 		render();
+		report();	// initial empty-board snapshot for spectators
 
 		return { destroy() {
 			document.removeEventListener('keydown', onKey);
@@ -341,6 +347,14 @@ export default {
 		injectStyles();
 		const done = progress?.cagesDone ?? 0;
 		const total = progress?.cages ?? 0;
+		const m = progress?.mini;
+		if (m) {	// live board snapshot
+			const s = m.w > 10 ? 5 : 7;
+			el.innerHTML = `<div class="kk-mini-board" style="grid-template-columns: repeat(${m.w}, ${s}px); grid-auto-rows: ${s}px;">`
+				+ m.c.map(v => `<div class="kk-mini-c"${v >= 0 ? ` style="background:${m.p[v]}"` : ''}></div>`).join('')
+				+ `</div><span class="kk-mini-n">${done}/${total} cages</span>`;
+			return;
+		}
 		const pct = total ? Math.round(done / total * 100) : 0;
 		el.innerHTML = `<span class="kk-mini"><span class="kk-mini-bar">`
 			+ `<span class="kk-mini-fill" style="width:${pct}%"></span></span>${done}/${total} cages</span>`;

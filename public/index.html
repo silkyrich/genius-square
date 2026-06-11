@@ -59,7 +59,17 @@
 		<div id="master-controls" hidden>
 			<div id="game-cards"></div>
 			<div id="game-options"></div>
-			<button id="btn-propose" class="primary">Set up the round</button>
+			<div id="round-buttons">
+				<button id="btn-propose" class="primary">Set up the round</button>
+				<button id="btn-add-playlist">+ Playlist</button>
+			</div>
+		</div>
+		<div id="playlist-box" hidden></div>
+		<div id="next-up" hidden>
+			<span id="next-up-label"></span>
+			<span id="next-up-count" class="muted"></span>
+			<button id="btn-play-next" class="primary">Start now</button>
+			<button id="btn-cancel-auto" hidden>Wait</button>
 		</div>
 		<div id="proposal-card" hidden>
 			<p id="proposal-text"></p>
@@ -98,7 +108,6 @@
 		</div>
 		<div id="players"></div>
 		<div id="party-settings" hidden>
-			<label>Theme <select id="theme-select"></select></label>
 			<label><input type="checkbox" id="public-toggle"> discoverable — list this party on the front page</label>
 		</div>
 		<div id="master-room-controls" hidden>

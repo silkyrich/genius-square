@@ -139,6 +139,9 @@ const CSS = `
 .pp-hint { text-align: center; color: var(--muted); font-size: .85rem; }
 .pp-mini-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-top: 3px; }
 .pp-mini-fill { height: 100%; background: var(--accent); }
+.pp-mini-board { display: inline-grid; gap: 1px; padding: 2px; background: var(--board-bg); border-radius: 4px; }
+.pp-mini-c { background: color-mix(in srgb, var(--cell) 40%, transparent); }
+.pp-mini-n { display: block; font-size: .75rem; color: var(--muted); margin-top: 3px; }
 `;
 
 function injectStyles() {
@@ -193,13 +196,15 @@ export default {
 			const m = effective(board, rots);
 			const seen = reach(m, n);
 			let connected = 0;
+			const snap = new Array(total).fill(-1);	// connected-and-matched tiles only
 			tiles.forEach((el, i) => {
 				const on = seen[i] && matched(m, i, n);
-				if (on) connected++;
+				if (on) { connected++; snap[i] = 0; }
 				el.classList.toggle('pp-live', seen[i]);
 			});
 			ctx.setStatus(`${connected}/${total} connected`, connected === total ? 'won' : 'ok');
-			if (report) ctx.progress({ type: 'pipes', connected, total });
+			if (report) ctx.progress({ type: 'pipes', connected, total, pct: connected / total,
+				mini: { w: n, h: n, p: ['#16a34a'], c: snap } });
 			if (connected === total && !done) {
 				done = true;
 				boardEl.classList.add('pp-won');
@@ -216,14 +221,23 @@ export default {
 			refresh(true);
 		});
 
-		refresh(false);	// initial connectivity paint + status
+		refresh(true);	// initial connectivity paint + status + snapshot for spectators
 		return {
 			destroy() { root.innerHTML = ''; },	// no document-level listeners to remove
 		};
 	},
 
 	renderMini(el, progress) {
+		injectStyles();
 		if (!progress) { el.textContent = 'not started'; return; }
+		const m = progress.mini;
+		if (m) {	// live board snapshot
+			const s = m.w > 10 ? 5 : 7;
+			el.innerHTML = `<div class="pp-mini-board" style="grid-template-columns: repeat(${m.w}, ${s}px); grid-auto-rows: ${s}px;">`
+				+ m.c.map(v => `<div class="pp-mini-c"${v >= 0 ? ` style="background:${m.p[v]}"` : ''}></div>`).join('')
+				+ `</div><span class="pp-mini-n">${progress.connected}/${progress.total}</span>`;
+			return;
+		}
 		const pct = progress.total ? Math.round(100 * progress.connected / progress.total) : 0;
 		el.innerHTML = `${progress.connected}/${progress.total}
 			<div class="pp-mini-bar"><div class="pp-mini-fill" style="width:${pct}%"></div></div>`;

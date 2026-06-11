@@ -27,8 +27,12 @@ export class Room {
 		const g = await this.state.storage.get('game');
 		if (g) {
 			g.chat ||= [];
-			g.theme ||= 'classic';
 			g.isPublic ??= false;
+			g.playlist ||= [];
+			g.playlistIdx ??= 0;
+			g.lockedGames ||= [];
+			g.events ||= [];
+			g.banned ||= [];
 			return g;
 		}
 		return {
@@ -42,8 +46,12 @@ export class Room {
 			scores: {},		// name -> party points, across games
 			lastResult: null,	// { round, game, winner, order: [{name, ms?, points?, awarded}] }
 			chat: [],		// [{ name, text, ts }], capped
-			theme: 'classic',
 			isPublic: false,
+			playlist: [],		// [{ game, options, label }] — the party's challenge queue
+			playlistIdx: 0,		// next playlist item to play
+			lockedGames: [],	// game keys the host has locked
+			events: [],		// [{ name, kind, ts }] — stuck/boom/near, capped
+			banned: [],
 		};
 	}
 	async putGame(g) { await this.state.storage.put('game', g); }
@@ -66,6 +74,9 @@ export class Room {
 		const name = request.headers.get('X-Player-Email')
 			|| url.searchParams.get('name')
 			|| 'anonymous';
+
+		if ((await this.game()).banned.includes(name))
+			return new Response('banned from this party', { status: 403 });
 
 		for (const ws of this.state.getWebSockets())
 			if (ws.deserializeAttachment()?.name === name) {
@@ -124,7 +135,6 @@ export class Room {
 						host: g.master,
 						players: playerCount,
 						game: g.phase === 'playing' ? g.puzzle?.game : (g.proposal?.game || 'lobby'),
-						theme: g.theme,
 						phase: g.phase,
 					}),
 				});
@@ -133,6 +143,8 @@ export class Room {
 
 	async startRound(g) {
 		g.round++;
+		if (Number.isInteger(g.puzzle?.playlistIdx ?? g.proposal?.playlistIdx))
+			g.playlistIdx = (g.proposal?.playlistIdx ?? 0) + 1;
 		g.phase = 'playing';
 		g.puzzle = g.proposal;
 		g.proposal = null;
@@ -196,11 +208,49 @@ export class Room {
 		}
 
 		// ----- party settings (master) -----
-		case 'theme':
+		case 'playlist': {
 			if (!isMaster) break;
-			g.theme = String(msg.key || 'classic').slice(0, 24);
+			if (!Array.isArray(msg.list)) break;
+			const list = msg.list.slice(0, 20).map(it => ({
+				game: String(it.game || '').slice(0, 24),
+				label: String(it.label || '').slice(0, 60),
+				options: it.options && JSON.stringify(it.options).length <= 2048 ? it.options : {},
+			})).filter(it => it.game);
+			g.playlist = list;
+			g.playlistIdx = Math.max(0, Math.min(list.length, Number(msg.idx) || 0));
 			await this.putGame(g);
 			break;
+		}
+		case 'lockGames':
+			if (!isMaster) break;
+			g.lockedGames = (Array.isArray(msg.keys) ? msg.keys : []).slice(0, 30).map(String);
+			await this.putGame(g);
+			break;
+		case 'kick': {
+			if (!isMaster) break;
+			const target = String(msg.name || '');
+			if (!target || target === att.name) break;
+			if (msg.ban && !g.banned.includes(target)) {
+				g.banned = [...g.banned, target].slice(-50);
+				await this.putGame(g);
+			}
+			for (const sock of this.state.getWebSockets())
+				if (sock.deserializeAttachment()?.name === target) {
+					try { sock.send(JSON.stringify({ t: 'kicked', reason: 'removed by the host' })); } catch {}
+					sock.close(4001, 'removed by the host');
+				}
+			break;
+		}
+		case 'event': {
+			// Lightweight gameplay gossip relayed to everyone: who's stuck,
+			// who hit a mine, who's nearly done.
+			const kind = String(msg.kind || '');
+			if (!['stuck', 'boom', 'near', 'mistake'].includes(kind)) break;
+			g.events.push({ name: att.name, kind, ts: Date.now() });
+			if (g.events.length > 30) g.events = g.events.slice(-30);
+			await this.putGame(g);
+			break;
+		}
 		case 'visibility':
 			if (!isMaster) break;
 			g.isPublic = !!msg.public;
@@ -212,9 +262,11 @@ export class Room {
 			if (!isMaster || g.phase === 'playing') break;
 			const p = msg.puzzle;
 			if (!p || typeof p.game !== 'string') break;
+			if (g.lockedGames.includes(p.game)) break;
 			if (JSON.stringify(p.payload ?? null).length > 32768) break;
 			g.proposal = {
 				game: p.game.slice(0, 24),
+				playlistIdx: Number.isInteger(p.playlistIdx) ? p.playlistIdx : null,
 				summary: String(p.summary || '').slice(0, 120),
 				scoreMode: p.scoreMode === 'points' ? 'points' : 'race',
 				durationMs: Number(p.durationMs) || 0,

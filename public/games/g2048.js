@@ -80,6 +80,9 @@ const CSS = `
 .g2-score { font-weight: 700; color: var(--text); }
 .g2-score span { color: var(--muted); font-weight: 400; }
 .g2-hint { color: var(--muted); font-size: .85rem; }
+.g2-mini { display: grid; gap: 1px; padding: 2px; background: var(--board-bg); border-radius: 4px; width: max-content; }
+.g2-mini div { width: 7px; height: 7px; }
+.g2-mini .g2-dim { background: var(--cell); opacity: .35; }
 `;
 
 function injectStyles() {
@@ -89,6 +92,9 @@ function injectStyles() {
 	s.textContent = CSS;
 	document.head.appendChild(s);
 }
+
+// Tile heat ramp for the mini snapshot: 2/4, 8/16, 32/64, 128/256, 512+.
+const MINI_P = ['#d6c7a1', '#f59e0b', '#ea7c2c', '#dc2626', '#9333ea'];
 
 // '3420' -> '3 420' (thin space thousands groups).
 function fmt(n) {
@@ -162,6 +168,16 @@ export default {
 			return [0, 1, 2, 3].every(d => !moveGrid(grid, d).moved);
 		}
 
+		// Tiny board snapshot for renderMini: heat-ramp palette index per tile.
+		function miniSnap() {
+			return { w: 4, h: 4, p: MINI_P,
+				c: grid.map(v => !v ? -1 : v <= 4 ? 0 : v <= 16 ? 1 : v <= 64 ? 2 : v <= 256 ? 3 : 4) };
+		}
+		function report() {
+			const best = Math.max(0, ...grid);
+			ctx.progress({ type: 'g2048', score, best, pct: Math.min(1, best / 2048), mini: miniSnap() });
+		}
+
 		function move(dir) {
 			const r = moveGrid(grid, dir);
 			if (!r.moved) return;
@@ -170,7 +186,7 @@ export default {
 			spawn();
 			paint();
 			const best = Math.max(...grid);
-			ctx.progress({ type: 'g2048', score, best });
+			report();
 			if (stuck()) ctx.setStatus('stuck — board full!', 'bad');
 			else ctx.setStatus(`${fmt(score)} pts · best ${best}`, 'ok');
 		}
@@ -195,6 +211,7 @@ export default {
 
 		paint();
 		ctx.setStatus('go!', 'ok');
+		report();	// announce presence immediately
 
 		return {
 			destroy() {
@@ -206,6 +223,13 @@ export default {
 	},
 
 	renderMini(el, progress) {
+		if (progress?.mini) {
+			const { w, p, c } = progress.mini;
+			el.innerHTML = `<div class="g2-mini" style="grid-template-columns: repeat(${w}, 7px);">${
+				c.map(v => v < 0 ? '<div class="g2-dim"></div>' : `<div style="background:${p[v]}"></div>`).join('')
+			}</div>best ${progress.best}`;
+			return;
+		}
 		el.textContent = progress
 			? `${progress.best} best · ${fmt(progress.score)} pts`
 			: 'no moves yet';

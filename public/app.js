@@ -18,12 +18,6 @@ import qrcode from '/vendor/qrcode.mjs';
 
 const GAMES = Object.fromEntries([gs, star, sudoku, kenken, boggle, pipes, nonogram, lightsout, mines, wordsearch, memory, trio, g2048].map(m => [m.key, m]));
 
-const THEMES = {
-	classic: { label: '🎲 Classic' },
-	pokemon: { label: '⚡ Pokémon' },
-	tigertea: { label: '🐯 Tiger Tea' },
-};
-
 const $ = id => document.getElementById(id);
 const playersEl = $('players');
 
@@ -128,16 +122,31 @@ let pickedGame = localStorage.getItem('gs-game') || 'gs';
 function renderGameCards() {
 	const wrap = $('game-cards');
 	wrap.innerHTML = '';
+	const locked = new Set(game?.lockedGames || []);
+	if (locked.has(pickedGame)) pickedGame = Object.keys(GAMES).find(k => !locked.has(k)) || 'gs';
 	for (const mod of Object.values(GAMES)) {
 		const card = document.createElement('button');
 		card.type = 'button';
-		card.className = 'game-card' + (mod.key === pickedGame ? ' picked' : '');
+		card.className = 'game-card' + (mod.key === pickedGame ? ' picked' : '') + (locked.has(mod.key) ? ' locked' : '');
 		card.innerHTML = `<span class="gc-icon">${mod.icon}</span><b>${mod.name}</b><small>${mod.blurb}</small>`;
 		card.addEventListener('click', () => {
+			if (locked.has(mod.key)) return;
 			pickedGame = mod.key;
 			localStorage.setItem('gs-game', mod.key);
 			renderGameCards();
 		});
+		// host can lock a game off the shelf for this party
+		const lk = document.createElement('span');
+		lk.className = 'gc-lock';
+		lk.textContent = locked.has(mod.key) ? '🔒' : '🔓';
+		lk.title = locked.has(mod.key) ? 'unlock this game' : 'lock this game';
+		lk.addEventListener('click', ev => {
+			ev.stopPropagation();
+			const next = new Set(locked);
+			next.has(mod.key) ? next.delete(mod.key) : next.add(mod.key);
+			send({ t: 'lockGames', keys: [...next] });
+		});
+		card.appendChild(lk);
 		wrap.appendChild(card);
 	}
 	renderGameOptions();
@@ -195,6 +204,86 @@ $('btn-propose').addEventListener('click', async () => {
 		$('btn-propose').disabled = false;
 	}
 });
+$('btn-add-playlist').addEventListener('click', () => {
+	const mod = GAMES[pickedGame];
+	if (!mod || (game?.lockedGames || []).includes(mod.key)) return;
+	const item = { game: mod.key, options: readOptions(), label: mod.name };
+	send({ t: 'playlist', list: [...(game?.playlist || []), item], idx: game?.playlistIdx || 0 });
+});
+
+async function proposeFromPlaylist() {
+	const item = game?.playlist[game.playlistIdx];
+	const mod = item && GAMES[item.game];
+	if (!mod) return;
+	const payload = await mod.createPuzzle(item.options || {});
+	send({ t: 'propose', puzzle: {
+		game: mod.key, summary: payload.summary, scoreMode: mod.scoreMode,
+		durationMs: payload.duration || mod.durationMs || 0, payload,
+		playlistIdx: game.playlistIdx,
+	} });
+}
+
+function renderPlaylist(g, isMaster) {
+	const box = $('playlist-box');
+	box.innerHTML = '';
+	box.hidden = !g.playlist.length;
+	g.playlist.forEach((it, i) => {
+		const row = document.createElement('div');
+		row.className = 'pl-item' + (i < g.playlistIdx ? ' done' : i === g.playlistIdx ? ' next' : '');
+		const mark = document.createElement('span');
+		mark.className = 'pl-mark';
+		mark.textContent = i < g.playlistIdx ? '✓' : i === g.playlistIdx ? '▶' : String(i + 1);
+		const label = document.createElement('span');
+		label.className = 'pl-label';
+		label.textContent = `${GAMES[it.game]?.icon || ''} ${it.label}`;
+		row.append(mark, label);
+		if (isMaster) {
+			const x = document.createElement('button');
+			x.className = 'pl-x';
+			x.textContent = '✕';
+			x.addEventListener('click', () => send({ t: 'playlist',
+				list: g.playlist.filter((_, j) => j !== i),
+				idx: g.playlistIdx > i ? g.playlistIdx - 1 : g.playlistIdx }));
+			row.appendChild(x);
+		}
+		box.appendChild(row);
+	});
+}
+
+let autoNextTimer = 0, autoNextCancelled = false;
+function updateNextUp(g, isMaster, inLobby, proposed) {
+	const next = inLobby && !proposed ? g.playlist[g.playlistIdx] : null;
+	$('next-up').hidden = !next;
+	if (!next) { clearInterval(autoNextTimer); autoNextTimer = 0; return; }
+	$('next-up-label').textContent = `Next up: ${GAMES[next.game]?.icon || ''} ${next.label}`;
+	$('btn-play-next').hidden = !isMaster;
+	$('btn-cancel-auto').hidden = !isMaster || !autoNextTimer;
+	if (!isMaster) { $('next-up-count').textContent = ''; return; }
+	// after the first round the playlist runs itself, with a grace countdown
+	if (g.round > 0 && !autoNextTimer && !autoNextCancelled) {
+		let left = 6;
+		$('next-up-count').textContent = `auto-starting in ${left}s`;
+		autoNextTimer = setInterval(() => {
+			if (--left <= 0) {
+				clearInterval(autoNextTimer); autoNextTimer = 0;
+				$('next-up-count').textContent = '';
+				proposeFromPlaylist();
+			} else $('next-up-count').textContent = `auto-starting in ${left}s`;
+		}, 1000);
+		$('btn-cancel-auto').hidden = false;
+	}
+}
+$('btn-play-next').addEventListener('click', () => {
+	clearInterval(autoNextTimer); autoNextTimer = 0;
+	proposeFromPlaylist();
+});
+$('btn-cancel-auto').addEventListener('click', () => {
+	autoNextCancelled = true;
+	clearInterval(autoNextTimer); autoNextTimer = 0;
+	$('next-up-count').textContent = 'paused — host starts manually';
+	$('btn-cancel-auto').hidden = true;
+});
+
 $('btn-agree').addEventListener('click', () => send({ t: 'agree' }));
 $('btn-force').addEventListener('click', () => send({ t: 'start' }));
 $('btn-end-round').addEventListener('click', () => send({ t: 'endRound' }));
@@ -204,21 +293,12 @@ $('btn-reset-scores').addEventListener('click', () => {
 });
 
 // party settings (master)
-{
-	const sel = $('theme-select');
-	for (const [key, t] of Object.entries(THEMES)) {
-		const o = document.createElement('option');
-		o.value = key; o.textContent = t.label;
-		sel.appendChild(o);
-	}
-	sel.addEventListener('change', () => send({ t: 'theme', key: sel.value }));
-	$('public-toggle').addEventListener('change', ev => send({ t: 'visibility', public: ev.target.checked }));
-}
+$('public-toggle').addEventListener('change', ev => send({ t: 'visibility', public: ev.target.checked }));
 
 // ---------- round lifecycle ----------
 let handle = null;			// mounted game module instance
 let startTime = 0, timerHandle = 0, finishedLocal = false;
-let lastPhase = null, lastRound = 0;
+let lastPhase = null, lastRound = 0, lastCardsKey = '';
 
 function setStatus(text, tone = '') {
 	const el = $('game-status');
@@ -228,6 +308,8 @@ function setStatus(text, tone = '') {
 
 function startRoundUI(g) {
 	finishedLocal = false;
+	autoNextCancelled = false;
+	let nearSent = false, lastStuckEventAt = 0;
 	const mod = GAMES[g.puzzle.game];
 	$('game-root').innerHTML = '';
 	setStatus('');
@@ -265,9 +347,23 @@ function startRoundUI(g) {
 			send({ t: 'finish', ms: Math.round(performance.now() - startTime) });
 			celebrate();
 		},
-		progress(blob) { send({ t: 'progress', data: blob }); },
+		progress(blob) {
+			// a player crossing 80% is news the room enjoys
+			if (blob && typeof blob.pct === 'number' && blob.pct >= 0.8 && !nearSent && !finishedLocal) {
+				nearSent = true;
+				send({ t: 'event', kind: 'near' });
+			}
+			send({ t: 'progress', data: blob });
+		},
 		setStatus,
-		sendStuck(stuck) { send({ t: 'stuck', stuck: !!stuck }); },
+		sendStuck(stuck) {
+			send({ t: 'stuck', stuck: !!stuck });
+			if (stuck && Date.now() - lastStuckEventAt > 15000) {
+				lastStuckEventAt = Date.now();
+				send({ t: 'event', kind: 'stuck' });
+			}
+		},
+		event(kind) { send({ t: 'event', kind }); },
 	});
 }
 
@@ -300,13 +396,47 @@ function celebrate() {
 	setTimeout(() => burst.remove(), 3200);
 }
 
+// ---------- event toasts ----------
+let lastEventTs = 0, eventsPrimed = false;
+const EVENT_TEXT = {
+	stuck: '🚧 hit a dead end',
+	boom: '💥 hit a mine',
+	near: '⚡ is nearly done!',
+	mistake: '❌ slipped up',
+};
+function showEvents(g) {
+	const evs = g.events || [];
+	if (!eventsPrimed) {	// don't replay history on join
+		eventsPrimed = true;
+		lastEventTs = Math.max(0, ...evs.map(e => e.ts));
+		return;
+	}
+	for (const e of evs) {
+		if (e.ts <= lastEventTs || e.name === me.name) continue;
+		toast(`${e.name} ${EVENT_TEXT[e.kind] || e.kind}`);
+	}
+	if (evs.length) lastEventTs = Math.max(lastEventTs, ...evs.map(e => e.ts));
+}
+function toast(text) {
+	let box = $('toasts');
+	if (!box) {
+		box = document.createElement('div');
+		box.id = 'toasts';
+		document.body.appendChild(box);
+	}
+	const t = document.createElement('div');
+	t.className = 'toast';
+	t.textContent = text;
+	box.appendChild(t);
+	setTimeout(() => t.classList.add('out'), 3400);
+	setTimeout(() => t.remove(), 4000);
+}
+
 // ---------- server state -> UI ----------
 function applyState(g, ps) {
 	game = g; players = ps;
 	const isMaster = g.master === me.name;
 	const inLobby = g.phase === 'lobby', proposed = g.phase === 'proposed', playing = g.phase === 'playing';
-
-	document.documentElement.dataset.skin = g.theme || 'classic';
 
 	// round transitions
 	if (playing && (lastPhase !== 'playing' || g.round !== lastRound)) startRoundUI(g);
@@ -323,11 +453,15 @@ function applyState(g, ps) {
 		(g.round === 0 ? 'New party' : `Round ${g.round} finished`);
 	$('master-controls').hidden = !(inLobby && isMaster);
 	$('party-settings').hidden = !isMaster;
-	if (isMaster) {
-		$('theme-select').value = g.theme || 'classic';
-		$('public-toggle').checked = !!g.isPublic;
+	if (isMaster) $('public-toggle').checked = !!g.isPublic;
+	const cardsKey = JSON.stringify(g.lockedGames || []);
+	if (inLobby && isMaster && (!$('game-cards').childElementCount || cardsKey !== lastCardsKey)) {
+		lastCardsKey = cardsKey;
+		renderGameCards();
 	}
-	if (inLobby && isMaster && !$('game-cards').childElementCount) renderGameCards();
+	renderPlaylist(g, isMaster);
+	updateNextUp(g, isMaster, inLobby, proposed);
+	showEvents(g);
 	if (inLobby && !isMaster)
 		$('lobby-title').textContent += ` — waiting for ${g.master} to pick a game`;
 
@@ -391,6 +525,17 @@ function renderPlayers(g, ps) {
 		pts.className = 'pts';
 		pts.textContent = g.scores[p.name] ?? 0;
 		el.append(mini, name, crown, stuck, time, pts);
+		if (g.master === me.name && p.name !== me.name) {
+			const boot = document.createElement('button');
+			boot.className = 'boot';
+			boot.textContent = '✕';
+			boot.title = 'remove from party';
+			boot.addEventListener('click', () => {
+				if (!confirm(`Remove ${p.name} from the party?`)) return;
+				send({ t: 'kick', name: p.name, ban: confirm('Also block them from rejoining? OK = block, Cancel = just remove.') });
+			});
+			el.appendChild(boot);
+		}
 		playersEl.appendChild(el);
 	}
 }
@@ -435,7 +580,7 @@ async function refreshParties() {
 			const card = document.createElement('button');
 			card.type = 'button';
 			card.className = 'party-card';
-			card.innerHTML = `<b>${THEMES[p.theme]?.label?.split(' ')[0] || '🎲'} ${p.code}</b>
+			card.innerHTML = `<b>🎲 ${p.code}</b>
 				<span>${p.host || 'someone'} · ${p.players} player${p.players === 1 ? '' : 's'}</span>
 				<small>${p.phase === 'playing' ? `playing ${mod?.name || p.game}` : 'in the lobby'}</small>`;
 			card.addEventListener('click', () => enterParty(p.code));

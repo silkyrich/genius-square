@@ -137,6 +137,9 @@ const CSS = `
 	background: var(--surface-2); border: 1px solid var(--border); border-radius: 3px;
 }
 .sd-mini-fill { display: block; height: 100%; background: var(--accent); }
+.sd-mini-board { display: inline-grid; gap: 1px; padding: 2px; background: var(--board-bg); border-radius: 4px; }
+.sd-mini-c { background: color-mix(in srgb, var(--cell) 40%, transparent); }
+.sd-mini-n { display: block; font-size: .75rem; color: var(--muted); margin-top: 3px; }
 `;
 
 function injectStyles() {
@@ -237,7 +240,9 @@ export default {
 		function report(bad) {
 			let filled = 0;
 			for (let i = 0; i < 81; i++) if (!isGiven[i] && entries[i]) filled++;
-			ctx.progress({ type: 'sudoku', filled, total });
+			ctx.progress({ type: 'sudoku', filled, total, pct: total ? filled / total : 1,
+				mini: { w: 9, h: 9, p: ['#6b7280', '#2563eb'],
+					c: entries.map((v, i) => isGiven[i] ? 0 : v ? 1 : -1) } });
 			ctx.sendStuck?.(bad.size > 0);
 			if (entries.join('') === solution) {
 				done = true;
@@ -265,7 +270,7 @@ export default {
 			}
 		}
 		document.addEventListener('keydown', onKey);
-		render();
+		report(render());	// initial paint + empty-board snapshot for spectators
 
 		return { destroy() {
 			document.removeEventListener('keydown', onKey);
@@ -278,6 +283,14 @@ export default {
 		const total = progress?.total
 			?? (payload ? [...payload.givens].filter(ch => ch === '0').length : 0);
 		const filled = progress?.filled ?? 0;
+		const m = progress?.mini;
+		if (m) {	// live board snapshot
+			const s = m.w > 10 ? 5 : 7;
+			el.innerHTML = `<div class="sd-mini-board" style="grid-template-columns: repeat(${m.w}, ${s}px); grid-auto-rows: ${s}px;">`
+				+ m.c.map(v => `<div class="sd-mini-c"${v >= 0 ? ` style="background:${m.p[v]}"` : ''}></div>`).join('')
+				+ `</div><span class="sd-mini-n">${filled}/${total}</span>`;
+			return;
+		}
 		const pct = total ? Math.round(filled / total * 100) : 0;
 		el.innerHTML = `<span class="sd-mini"><span class="sd-mini-bar">`
 			+ `<span class="sd-mini-fill" style="width:${pct}%"></span></span>${filled}/${total}</span>`;

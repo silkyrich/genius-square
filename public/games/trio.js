@@ -211,7 +211,7 @@ export default {
 			lock = true;
 			sel.forEach(i => gridEl.querySelector(`[data-i="${i}"]`)?.classList.add('th-ok'));
 			setTotal();
-			ctx.progress({ type: 'trio', found, score });
+			ctx.progress({ type: 'trio', found, score, pct: Math.min(1, found / 8) });
 			ctx.setStatus(`${score} pts · ${found} trios`, 'ok');
 			flashTimer = setTimeout(() => {
 				sel.forEach(i => { board[i] = deckPos < deck.length ? deck[deckPos++] : null; });
@@ -252,6 +252,7 @@ export default {
 		ensureTrio();
 		render();
 		if (!done) ctx.setStatus('find a trio!', 'ok');
+		ctx.progress({ type: 'trio', found: 0, score: 0, pct: 0 });	// announce presence
 
 		return {
 			destroy() { clearTimeout(flashTimer); root.innerHTML = ''; },

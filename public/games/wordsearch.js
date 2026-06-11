@@ -115,6 +115,9 @@ const CSS = `
 	border: 1px solid var(--border); color: var(--text); font-size: .85rem;
 }
 .ws-chip.ws-done { text-decoration: line-through; color: var(--muted); }
+.ws-mini { display: grid; gap: 1px; padding: 2px; background: var(--board-bg); border-radius: 4px; width: max-content; }
+.ws-mini div { width: 7px; height: 7px; }
+.ws-mini .ws-dim { background: var(--cell); opacity: .35; }
 `;
 
 function injectStyles() {
@@ -173,6 +176,20 @@ export default {
 		const gridEl = root.querySelector('.ws-grid');
 		const cells = [...root.querySelectorAll('.ws-cell')];
 
+		// Tiny board snapshot for renderMini: found-word cells in palette 0.
+		function miniSnap() {
+			const c = new Array(size * size).fill(-1);
+			for (const k of foundIdx) for (const i of placed[k].cells) c[i] = 0;
+			return { w: size, h: size, p: ['#f59e0b'], c };
+		}
+		function report() {
+			ctx.progress({
+				type: 'wordsearch', found: foundIdx.size, total: placed.length, score,
+				pct: foundIdx.size / (placed.length || 1), mini: miniSnap(),
+			});
+		}
+		report();	// announce presence immediately
+
 		function paintSel(sel) {
 			cells.forEach((el, i) => el.classList.toggle('ws-sel', sel.includes(i)));
 		}
@@ -200,7 +217,7 @@ export default {
 			});
 			root.querySelector(`.ws-chip[data-w="${hit}"]`).classList.add('ws-done');
 			score += placed[hit].word.length;
-			ctx.progress({ type: 'wordsearch', found: foundIdx.size, total: placed.length, score });
+			report();
 			if (foundIdx.size === placed.length) ctx.setStatus('★ all found!', 'won');
 			else ctx.setStatus(`${score} pts · ${foundIdx.size}/${placed.length}`, 'ok');
 		}
@@ -234,6 +251,13 @@ export default {
 	},
 
 	renderMini(el, progress) {
+		if (progress?.mini) {
+			const { w, p, c } = progress.mini;
+			el.innerHTML = `<div class="ws-mini" style="grid-template-columns: repeat(${w}, 7px);">${
+				c.map(v => v < 0 ? '<div class="ws-dim"></div>' : `<div style="background:${p[v]}"></div>`).join('')
+			}</div>${progress.found}/${progress.total}`;
+			return;
+		}
 		el.textContent = progress
 			? `${progress.found}/${progress.total} · ${progress.score} pts`
 			: 'no words yet';

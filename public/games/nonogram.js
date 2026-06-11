@@ -137,6 +137,9 @@ const CSS = `
 .nn-hint { text-align: center; color: var(--muted); font-size: .85rem; }
 .nn-mini-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-top: 3px; }
 .nn-mini-fill { height: 100%; background: var(--accent); }
+.nn-mini-board { display: inline-grid; gap: 1px; padding: 2px; background: var(--board-bg); border-radius: 4px; }
+.nn-mini-c { background: color-mix(in srgb, var(--cell) 40%, transparent); }
+.nn-mini-n { display: block; font-size: .75rem; color: var(--muted); margin-top: 3px; }
 `;
 
 function injectStyles() {
@@ -207,7 +210,8 @@ export default {
 				if (ok) lines++;
 				colClues[c].classList.toggle('nn-done', ok);
 			}
-			if (report) ctx.progress({ type: 'nonogram', done: lines, total: 2 * n });
+			if (report) ctx.progress({ type: 'nonogram', done: lines, total: 2 * n, pct: lines / (2 * n),
+				mini: { w: n, h: n, p: ['#2563eb'], c: state.map(v => v === 1 ? 0 : -1) } });
 			if (lines === 2 * n && !done) {
 				done = true;
 				boardEl.classList.add('nn-won');
@@ -228,15 +232,24 @@ export default {
 			refresh(true);
 		});
 
-		refresh(false);	// initial clue highlighting + status
+		refresh(true);	// initial clue highlighting + status + empty-board snapshot
 		return {
 			destroy() { root.innerHTML = ''; },	// no document-level listeners to remove
 		};
 	},
 
 	renderMini(el, progress) {
+		injectStyles();
 		if (!progress) { el.textContent = 'not started'; return; }
 		const done = progress.done || 0;
+		const m = progress.mini;
+		if (m) {	// live board snapshot
+			const s = m.w > 10 ? 5 : 7;
+			el.innerHTML = `<div class="nn-mini-board" style="grid-template-columns: repeat(${m.w}, ${s}px); grid-auto-rows: ${s}px;">`
+				+ m.c.map(v => `<div class="nn-mini-c"${v >= 0 ? ` style="background:${m.p[v]}"` : ''}></div>`).join('')
+				+ `</div><span class="nn-mini-n">${done}/${progress.total} lines</span>`;
+			return;
+		}
 		const pct = progress.total ? Math.round(100 * done / progress.total) : 0;
 		el.innerHTML = `${done}/${progress.total} lines
 			<div class="nn-mini-bar"><div class="nn-mini-fill" style="width:${pct}%"></div></div>`;

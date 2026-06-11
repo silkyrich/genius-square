@@ -76,6 +76,9 @@ const CSS = `
 .lo-board.lo-won .lo-cell { cursor: default; }
 .lo-moves { text-align: center; font-weight: 700; color: var(--text); }
 .lo-hint { text-align: center; color: var(--muted); font-size: .85rem; }
+.lo-mini-board { display: inline-grid; gap: 1px; padding: 2px; background: var(--board-bg); border-radius: 4px; }
+.lo-mini-c { background: color-mix(in srgb, var(--cell) 40%, transparent); }
+.lo-mini-n { display: block; font-size: .75rem; color: var(--muted); margin-top: 3px; }
 `;
 
 function injectStyles() {
@@ -129,6 +132,9 @@ export default {
 		const boardEl = root.querySelector('.lo-board');
 		const movesEl = root.querySelector('.lo-moves');
 
+		const report = lit => ctx.progress({ type: 'lightsout', lit, total, moves, pct: 1 - lit / total,
+			mini: { w: n, h: n, p: ['#eab308'], c: board.map(v => v ? 0 : -1) } });
+
 		boardEl.addEventListener('click', e => {
 			const cell = e.target.closest('.lo-cell');
 			if (!cell || done) return;
@@ -137,7 +143,7 @@ export default {
 			cells.forEach((el, i) => el.classList.toggle('lo-lit', !!board[i]));
 			movesEl.textContent = `${moves} move${moves === 1 ? '' : 's'}`;
 			const lit = litCount(board);
-			ctx.progress({ type: 'lightsout', lit, total, moves });
+			report(lit);
 			if (lit === 0) {
 				done = true;	// lock input; finish only once
 				boardEl.classList.add('lo-won');
@@ -149,12 +155,22 @@ export default {
 		});
 
 		ctx.setStatus(`${litCount(board)} lit · 0 moves`, 'ok');
+		report(litCount(board));	// initial snapshot for spectators
 		return {
 			destroy() { root.innerHTML = ''; },	// no document-level listeners to remove
 		};
 	},
 
 	renderMini(el, progress) {
+		injectStyles();
+		const m = progress?.mini;
+		if (m) {	// live board snapshot
+			const s = m.w > 10 ? 5 : 7;
+			el.innerHTML = `<div class="lo-mini-board" style="grid-template-columns: repeat(${m.w}, ${s}px); grid-auto-rows: ${s}px;">`
+				+ m.c.map(v => `<div class="lo-mini-c"${v >= 0 ? ` style="background:${m.p[v]}"` : ''}></div>`).join('')
+				+ `</div><span class="lo-mini-n">${progress.lit} lit · ${progress.moves} moves</span>`;
+			return;
+		}
 		el.textContent = progress
 			? `${progress.lit} lit · ${progress.moves} moves`
 			: 'not started';

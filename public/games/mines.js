@@ -101,6 +101,9 @@ const CSS = `
 .ms-hint { text-align: center; color: var(--muted); font-size: .85rem; }
 .ms-mini-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-top: 3px; }
 .ms-mini-fill { height: 100%; background: var(--accent); }
+.ms-mini-board { display: inline-grid; gap: 1px; padding: 2px; background: var(--board-bg); border-radius: 4px; }
+.ms-mini-c { background: color-mix(in srgb, var(--cell) 40%, transparent); }
+.ms-mini-n { display: block; font-size: .75rem; color: var(--muted); margin-top: 3px; }
 `;
 
 function injectStyles() {
@@ -169,7 +172,10 @@ export default {
 			el.textContent = flagged.has(i) ? '🚩' : '';
 		}
 
-		const report = () => ctx.progress({ type: 'mines', cleared: revealed.size, total: totalSafe, booms });
+		const report = () => ctx.progress({ type: 'mines', cleared: revealed.size, total: totalSafe, booms,
+			pct: revealed.size / totalSafe,
+			mini: { w, h, p: ['#93c5fd', '#dc2626', '#f59e0b'],
+				c: nums.map((_, i) => exploded.has(i) ? 1 : revealed.has(i) ? 0 : flagged.has(i) ? 2 : -1) } });
 		const tally = () => ctx.setStatus(`${revealed.size}/${totalSafe} cleared`, 'ok');
 
 		function reveal(i) {
@@ -188,6 +194,7 @@ export default {
 			flagged.delete(i);
 			paint(i);
 			booms++;
+			ctx.event?.('boom');	// app may not provide events yet
 			report();
 			locked = true;
 			let left = 10;
@@ -242,7 +249,16 @@ export default {
 	},
 
 	renderMini(el, progress) {
+		injectStyles();
 		if (!progress) { el.textContent = 'not started'; return; }
+		const m = progress.mini;
+		if (m) {	// live board snapshot
+			const s = m.w > 10 ? 5 : 7;
+			el.innerHTML = `<div class="ms-mini-board" style="grid-template-columns: repeat(${m.w}, ${s}px); grid-auto-rows: ${s}px;">`
+				+ m.c.map(v => `<div class="ms-mini-c"${v >= 0 ? ` style="background:${m.p[v]}"` : ''}></div>`).join('')
+				+ `</div><span class="ms-mini-n">${progress.cleared}/${progress.total} · ${progress.booms ?? 0}💥</span>`;
+			return;
+		}
 		const pct = progress.total ? Math.round(100 * progress.cleared / progress.total) : 0;
 		el.innerHTML = `${progress.cleared}/${progress.total} · ${progress.booms ?? 0}💥
 			<div class="ms-mini-bar"><div class="ms-mini-fill" style="width:${pct}%"></div></div>`;

@@ -504,8 +504,8 @@ export default {
 
 		function afterChange() {
 			renderBoard(); renderGhost();
-			ctx.progress({ type: 'star', placed: Object.fromEntries(placed) });
 			const covered = [...placed.values()].reduce((n, cs) => n + cs.length, 0);
+			ctx.progress({ type: 'star', placed: Object.fromEntries(placed), pct: covered / 41 });
 			if (covered === 41 && !done) {
 				done = true;
 				ctx.setStatus('★ solved!', 'won');
@@ -524,6 +524,7 @@ export default {
 
 		renderBoard();
 		ctx.setStatus('● solvable', 'ok');
+		ctx.progress({ type: 'star', placed: {}, pct: 0 });	// announce presence
 
 		return {
 			destroy() {

@@ -25,19 +25,37 @@ await sleep(500);
 
 ok(alice.state.game.master === 'alice', 'first joiner is master');
 
-// theme + discoverability
-alice.send({ t: 'theme', key: 'tigertea' });
+// discoverability
 alice.send({ t: 'visibility', public: true });
 await sleep(400);
-ok(bob.state.game.theme === 'tigertea', 'theme broadcast');
 ok(bob.state.game.isPublic === true, 'visibility broadcast');
 const parties = await (await fetch('http://localhost:8787/api/parties')).json();
-ok(parties.some(p => p.code === code && p.theme === 'tigertea'), 'party listed in directory');
+ok(parties.some(p => p.code === code), 'party listed in directory');
+
+// playlist + locks
+alice.send({ t: 'playlist', list: [
+	{ game: 'gs', label: 'Genius Square', options: { difficulty: 'easy' } },
+	{ game: 'boggle', label: 'Boggle', options: { duration: '90' } },
+], idx: 0 });
+alice.send({ t: 'lockGames', keys: ['mines'] });
+await sleep(400);
+ok(bob.state.game.playlist.length === 2, 'playlist broadcast');
+ok(bob.state.game.lockedGames.includes('mines'), 'lock broadcast');
+alice.send({ t: 'propose', puzzle: { game: 'mines', summary: 'x', scoreMode: 'race', payload: {} } });
+await sleep(300);
+ok(alice.state.game.phase === 'lobby', 'locked game proposal rejected');
+
+// events relay
+bob.send({ t: 'event', kind: 'near' });
+bob.send({ t: 'event', kind: 'hax' });
+await sleep(400);
+ok(alice.state.game.events.length === 1 && alice.state.game.events[0].kind === 'near'
+	&& alice.state.game.events[0].name === 'bob', 'event relayed, junk kind dropped');
 
 // ---- round 1: race game (genius square style payload is opaque) ----
 alice.send({ t: 'propose', puzzle: {
 	game: 'gs', summary: 'Genius Square — Medium', scoreMode: 'race', durationMs: 0,
-	payload: { cells: [1, 2, 3, 4, 5, 6, 7] },
+	payload: { cells: [1, 2, 3, 4, 5, 6, 7] }, playlistIdx: 0,
 } });
 await sleep(400);
 ok(bob.state.game.phase === 'proposed', 'proposal broadcast');
@@ -45,6 +63,7 @@ ok(bob.state.game.proposal.game === 'gs', 'proposal carries game key');
 bob.send({ t: 'agree' });
 await sleep(400);
 ok(alice.state.game.phase === 'playing', 'all agreed -> playing');
+ok(alice.state.game.playlistIdx === 1, 'playlist advanced on round start');
 
 bob.send({ t: 'progress', data: { type: 'gs', placements: { square: [10, 11, 16, 17] } } });
 bob.send({ t: 'stuck', stuck: true });
@@ -82,6 +101,20 @@ ok(bob.state.game.phase === 'lobby', 'points: all finished -> lobby');
 ok(bob.state.game.lastResult.winner === 'bob', 'points: highest score wins');
 ok(bob.state.game.scores.bob === 2 + 3 && bob.state.game.scores.alice === 3 + 2, 'points: podium added to party scores');
 ok(bob.state.game.lastResult.order[0].points === 19, 'result order carries points');
+
+// host boots bob (with ban) — bob's socket gets kicked and rejoin is refused
+let bobKicked = false;
+bob.ws.on('message', d => { const m = JSON.parse(d); if (m.t === 'kicked') bobKicked = true; });
+alice.send({ t: 'kick', name: 'bob', ban: true });
+await sleep(500);
+ok(bobKicked, 'booted player told and disconnected');
+const rejoin = await new Promise(res => {
+	const ws2 = new WebSocket(`ws://localhost:8787/ws/${code}?name=bob`);
+	ws2.on('open', () => res('open'));
+	ws2.on('error', () => res('refused'));
+	ws2.on('unexpected-response', () => res('refused'));
+});
+ok(rejoin === 'refused', 'banned player cannot rejoin');
 
 alice.ws.close(); bob.ws.close();
 console.log(`\n${pass}/${pass + fail} passed`);

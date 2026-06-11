@@ -287,8 +287,9 @@ export default {
 		function afterChange() {
 			updateExplore();
 			renderBoard(); renderGhost();
-			ctx.progress({ type: 'gs', placements: Object.fromEntries(placed) });
-			const covered = [...placed.values()].flat().length + blockers.length === 36;
+			const filled = [...placed.values()].flat().length;	// piece cells of 29
+			ctx.progress({ type: 'gs', placements: Object.fromEntries(placed), pct: filled / 29 });
+			const covered = filled + blockers.length === 36;
 			if (covered && !done) {
 				done = true;
 				clearInterval(exploreTimer);
@@ -311,6 +312,7 @@ export default {
 
 		updateExplore();
 		renderBoard();
+		ctx.progress({ type: 'gs', placements: {}, pct: 0 });	// announce presence
 		if (!explore && showDead) ctx.setStatus('● solvable', 'ok');
 		if (explore)
 			exploreTimer = setInterval(() => {

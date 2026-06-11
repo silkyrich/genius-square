@@ -231,7 +231,7 @@ export default {
 			chip.innerHTML = `${word} <b>+${pts}</b>`;
 			foundEl.prepend(chip);
 			totalEl.innerHTML = `${total} pts <span>· ${found.size} word${found.size === 1 ? '' : 's'}</span>`;
-			ctx.progress({ type: 'boggle', words: found.size, score: total });
+			ctx.progress({ type: 'boggle', words: found.size, score: total, pct: Math.min(1, found.size / 12) });
 			ctx.setStatus(`${total} pts`, 'ok');
 			clearPath();
 			input.value = '';
@@ -246,6 +246,7 @@ export default {
 		});
 		input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(input.value); });
 
+		ctx.progress({ type: 'boggle', words: 0, score: 0, pct: 0 });	// announce presence
 		return {
 			destroy() { root.innerHTML = ''; },	// no document-level listeners to remove
 			endRound() { return { points: total }; },

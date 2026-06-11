@@ -68,6 +68,9 @@ const CSS = `
 .mm-hint { text-align: center; color: var(--muted); font-size: .85rem; }
 .mm-mini-bar { height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; margin-top: 3px; }
 .mm-mini-fill { height: 100%; background: var(--accent); }
+.mm-mini { display: grid; gap: 1px; padding: 2px; background: var(--board-bg); border-radius: 4px; width: max-content; }
+.mm-mini div { width: 7px; height: 7px; }
+.mm-mini .mm-dim { background: var(--cell); opacity: .35; }
 `;
 
 function injectStyles() {
@@ -104,6 +107,7 @@ export default {
 		const total = (w * h) / 2;
 		let first = -1, matched = 0, moves = 0;
 		let locked = false, done = false, peekTimer = 0;
+		const matchedCells = new Set();	// card indices already paired
 
 		root.innerHTML = `
 			<div class="mm-wrap">
@@ -118,10 +122,15 @@ export default {
 		const cards = [...root.querySelectorAll('.mm-card')];
 		const movesEl = root.querySelector('.mm-moves');
 
+		// Tiny board snapshot for renderMini: matched cards in palette 0.
+		function miniSnap() {
+			return { w, h, p: ['#16a34a'], c: layout.map((_, i) => matchedCells.has(i) ? 0 : -1) };
+		}
+
 		// Both flips done: report progress, maybe win. Called for every pair.
 		function resolve() {
 			movesEl.textContent = `${matched}/${total} pairs · ${moves} moves`;
-			ctx.progress({ type: 'memory', matched, total, moves });
+			ctx.progress({ type: 'memory', matched, total, moves, pct: matched / total, mini: miniSnap() });
 			if (matched === total) {
 				done = true;	// lock input; finish only once
 				ctx.setStatus('★ all matched!', 'won');
@@ -144,6 +153,7 @@ export default {
 			if (layout[Number(a.dataset.i)] === layout[i]) {
 				a.classList.add('mm-done');
 				card.classList.add('mm-done');
+				matchedCells.add(Number(a.dataset.i)).add(i);
 				matched++;
 				resolve();
 			} else {
@@ -158,6 +168,7 @@ export default {
 		});
 
 		ctx.setStatus(`0/${total} pairs · 0 moves`, 'ok');
+		ctx.progress({ type: 'memory', matched: 0, total, moves: 0, pct: 0, mini: miniSnap() });	// announce presence
 		return {
 			destroy() {
 				clearTimeout(peekTimer);
@@ -168,6 +179,13 @@ export default {
 
 	renderMini(el, progress) {
 		if (!progress) { el.textContent = 'not started'; return; }
+		if (progress.mini) {
+			const { w, p, c } = progress.mini;
+			el.innerHTML = `<div class="mm-mini" style="grid-template-columns: repeat(${w}, 7px);">${
+				c.map(v => v < 0 ? '<div class="mm-dim"></div>' : `<div style="background:${p[v]}"></div>`).join('')
+			}</div>${progress.matched}/${progress.total}`;
+			return;
+		}
 		const pct = progress.total ? Math.round(100 * progress.matched / progress.total) : 0;
 		el.innerHTML = `${progress.matched}/${progress.total} · ${progress.moves ?? 0} moves
 			<div class="mm-mini-bar"><div class="mm-mini-fill" style="width:${pct}%"></div></div>`;
