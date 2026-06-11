@@ -206,7 +206,7 @@ export default {
 
 		function tap(i) {
 			const k = path.indexOf(i);
-			if (k === path.length - 1) path.pop();	// tap head again to undo
+			if (k >= 0 && k === path.length - 1) path.pop();	// tap head again to undo
 			else if (k >= 0) return;	// already used
 			else if (path.length && !ADJ[path[path.length - 1]].includes(i)) return;	// not adjacent
 			else path.push(i);

@@ -3,29 +3,26 @@
 // ghost preview, and a piece "in hand", next to the wordmark.
 // Rasterize for og.jpg with: npm run hero && qlmanage -t -s 1200 ...
 import { writeFileSync } from 'node:fs';
+import { solve, nameToIndex, PIECES, PIECE_INDEX } from '../public/solver.js';
 
 const W = 1200, H = 630;
 const CELL = 56, GAP = 6, PAD = 16;
 const BOARD = 6 * CELL + 5 * GAP + 2 * PAD;	// 394
 const BX = 86, BY = (H - BOARD) / 2;
 
-const COLORS = {
-	single: '#2563eb', line2: '#9a3412', line3: '#f59e0b', line4: '#6b7280',
-	square: '#16a34a', lblock2: '#9333ea', lblock3: '#0ea5e9',
-	zblock: '#dc2626', tblock: '#eab308',
-};
+const COLORS = Object.fromEntries(PIECES.map(p => [p.key, p.color]));
 
-const blockers = [[0,3],[1,0],[2,2],[2,5],[4,1],[5,0],[5,4]];
-const pieces = [
-	['tblock',  [[0,0],[0,1],[0,2],[1,1]]],
-	['line2',   [[0,5],[1,5]]],
-	['line3',   [[1,2],[1,3],[1,4]]],
-	['zblock',  [[2,3],[2,4],[3,4],[3,5]]],
-	['lblock3', [[2,0],[2,1],[3,0],[4,0]]],
-	['square',  [[4,2],[4,3],[5,2],[5,3]]],
-	['single',  [[5,5]]],
-];
-const ghost = [[4,4],[4,5]];	// line2 preview, green outline
+// A REAL mid-game position: solve an actual board, draw the solution with
+// the purple L (in hand), the sky L and the single still to play. The ghost
+// previews exactly where the held purple piece belongs. Legal by construction.
+const rc = i => [Math.floor(i / 6), i % 6];
+const blockers = 'A3 A5 B4 C6 E2 E6 F1'.split(' ').map(nameToIndex).map(rc);
+const solution = solve('A3 A5 B4 C6 E2 E6 F1'.split(' ').map(nameToIndex));
+const PENDING = ['lblock2', 'lblock3', 'single'];	// not on the board yet
+const pieces = Object.entries(solution)
+	.filter(([key]) => !PENDING.includes(key))
+	.map(([key, cells]) => [key, cells.map(rc)]);
+const ghost = solution.lblock2.map(rc);	// where the held piece goes
 
 const xy = (r, c) => [BX + PAD + c * (CELL + GAP), BY + PAD + r * (CELL + GAP)];
 

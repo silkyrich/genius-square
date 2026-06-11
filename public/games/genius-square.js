@@ -184,6 +184,11 @@ export default {
 
 		function rotate() { orientIdx++; renderTray(); renderGhost(); }
 		root.querySelector('.gs-rotate').addEventListener('click', rotate);
+		root.addEventListener('contextmenu', e => {	// right-click spins the held piece
+			if (selected === null) return;
+			e.preventDefault();
+			rotate();
+		});
 		const onKey = e => {
 			if (e.key === 'r' || e.key === 'R' || e.key === 'f' || e.key === 'F') rotate();
 		};

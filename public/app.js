@@ -87,7 +87,8 @@ function connect() {
 		if (m.t === 'kicked') {
 			kicked = true;
 			ws.close();
-			$('room-label').textContent = m.reason;
+			$('room-label').textContent = m.reason + ' — taking you home…';
+			setTimeout(() => location.href = '/', 1800);
 		}
 	});
 	ws.addEventListener('close', () => {
@@ -126,7 +127,9 @@ let pickedGame = localStorage.getItem('gs-game') || 'gs';
 
 function renderGameCards() {
 	const wrap = $('game-cards');
+	$('master-controls').appendChild($('card-panel'));	// rescue before wipe
 	wrap.innerHTML = '';
+	let pickedEl = null;
 	const locked = new Set(game?.lockedGames || []);
 	if (locked.has(pickedGame)) pickedGame = Object.keys(GAMES).find(k => !locked.has(k)) || 'gs';
 	for (const mod of Object.values(GAMES)) {
@@ -153,7 +156,10 @@ function renderGameCards() {
 		});
 		card.appendChild(lk);
 		wrap.appendChild(card);
+		if (mod.key === pickedGame) pickedEl = card;
 	}
+	// options live right under the selected card's row, not at the bottom
+	if (pickedEl) pickedEl.insertAdjacentElement('afterend', $('card-panel'));
 	renderGameOptions();
 }
 
@@ -296,9 +302,43 @@ $('btn-clear-room').addEventListener('click', () => send({ t: 'clearRound' }));
 $('btn-reset-scores').addEventListener('click', () => {
 	if (confirm('Reset all scores to zero?')) send({ t: 'resetScores' });
 });
+$('btn-end-party').addEventListener('click', () => {
+	if (!confirm('End the party for everyone? Scores and chat are wiped.')) return;
+	localStorage.setItem('gs-parties', JSON.stringify(
+		JSON.parse(localStorage.getItem('gs-parties') || '[]').filter(q => q.code !== roomCode)));
+	send({ t: 'endParty' });
+});
 
 // party settings (master)
 $('public-toggle').addEventListener('change', ev => send({ t: 'visibility', public: ev.target.checked }));
+
+// ---------- how to play ----------
+const HELP = {
+	gs: 'Fit all nine pieces around the pearl blockers. Tap a piece to pick it up (tap it again, right-click, or hit ⟳/R to rotate), tap the board to preview, tap the same spot to confirm. Tap a placed piece to take it back. First to fill every cell wins.',
+	star: 'Same idea, but triangles: tile the whole star around the seven pearls with all 11 pieces. Tap a piece, tap again (or right-click / ⟳) to rotate, two-tap the board to place. First to fill the star wins.',
+	sudoku: 'Every row, column and 3×3 box must contain 1–9 exactly once. Tap a cell, then a number on the pad (⌫ erases). Conflicts get highlighted. First correct grid wins.',
+	kenken: 'Fill the grid with 1–N: no repeats in any row or column, and each outlined cage must combine to its little target using the shown operation (− and ÷ in either order). First correct grid wins.',
+	boggle: 'Build words of 3+ letters from adjacent tiles (diagonals count, no reusing a tile): tap letters then Submit, or just type a word and press Enter. Longer words score more. Highest score when time runs out.',
+	pipes: 'Every tile is a bit of pipe. Tap a tile to rotate it. Reconnect everything into one network with no open ends — connected pipe lights up as you go. First to restore the network wins.',
+	nonogram: 'The numbers are runs of filled cells in that row/column, in order — "2 1" means 2 filled, a gap, then 1. Tap to fill, tap again for an ✕ note (just a note), again to clear. First to satisfy every clue wins.',
+	lightsout: 'Tapping a light toggles it AND its four neighbours. Turn every light off — first to a dark board wins.',
+	mines: 'Numbers count the mines touching that square. Tap to reveal; use the flag toggle (or long-press) to mark suspected mines. Hitting a mine costs a 10-second lockout. First to reveal every safe square wins.',
+	wordsearch: 'Every word on the list below is hidden in the grid — across, down or diagonally, forwards or backwards. The list is the complete set. Tap a word\'s first and last letter to claim it; find them all for a +10 bonus. Highest score when time runs out.',
+	memory: 'Tap two cards: a pair stays up, a miss flips back. Everyone has the same shuffle, so it\'s pure memory. First to match every pair wins.',
+	trio: 'A trio is 3 cards where each feature — count, shape, fill, colour — is all-same or all-different. Tap 3 cards to claim one (+3; a wrong guess is −1, a hint costs 2). Highest score when time runs out.',
+	g2048: 'Swipe or use arrow keys to slide the tiles; equal tiles merge and score. No game over — just rack up the biggest score before the clock stops.',
+};
+
+function showHelp(gameKey) {
+	const el = $('game-help');
+	$('game-help-text').textContent = HELP[gameKey] || '';
+	el.hidden = !HELP[gameKey];
+	// auto-open the first time you ever play each game
+	const seen = JSON.parse(localStorage.getItem('gs-help-seen') || '{}');
+	el.open = !seen[gameKey];
+	seen[gameKey] = true;
+	localStorage.setItem('gs-help-seen', JSON.stringify(seen));
+}
 
 // ---------- round lifecycle ----------
 let handle = null;			// mounted game module instance
@@ -319,6 +359,7 @@ function startRoundUI(g) {
 	$('game-root').innerHTML = '';
 	setStatus('');
 	$('round-game-label').textContent = g.puzzle.summary || mod?.name || g.puzzle.game;
+	showHelp(g.puzzle.game);
 	startTime = performance.now();
 	clearInterval(timerHandle);
 
@@ -662,7 +703,16 @@ function renderChat(chat = []) {
 		row.className = 'chat-msg' + (m.name === me.name ? ' mine' : '');
 		const who = document.createElement('b');
 		who.textContent = m.name;
-		row.append(who, document.createTextNode(' ' + m.text));
+		row.append(who, document.createTextNode(' '));
+		// URLs become real links; everything else stays inert text
+		for (const part of m.text.split(/(https?:\/\/[^\s]+)/g)) {
+			if (/^https?:\/\//.test(part)) {
+				const a = document.createElement('a');
+				a.href = part; a.textContent = part;
+				a.target = '_blank'; a.rel = 'noopener noreferrer';
+				row.appendChild(a);
+			} else if (part) row.appendChild(document.createTextNode(part));
+		}
 		box.appendChild(row);
 	}
 	box.scrollTop = box.scrollHeight;

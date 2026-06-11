@@ -63,10 +63,12 @@
 		<h2 id="lobby-title"></h2>
 		<div id="master-controls" hidden>
 			<div id="game-cards"></div>
-			<div id="game-options"></div>
-			<div id="round-buttons">
-				<button id="btn-propose" class="primary">Set up the round</button>
-				<button id="btn-add-playlist">+ Playlist</button>
+			<div id="card-panel">
+				<div id="game-options"></div>
+				<div id="round-buttons">
+					<button id="btn-propose" class="primary">Set up the round</button>
+					<button id="btn-add-playlist">+ Playlist</button>
+				</div>
 			</div>
 		</div>
 		<div id="playlist-box" hidden></div>
@@ -94,6 +96,7 @@
 			<span id="game-status"></span>
 		</div>
 		<p id="round-game-label" class="muted"></p>
+		<details id="game-help" class="muted"><summary>ⓘ how to play</summary><span id="game-help-text"></span></details>
 	</section>
 
 	<!-- room chat -->
@@ -119,6 +122,7 @@
 			<button id="btn-end-round">End round</button>
 			<button id="btn-clear-room">Clear round</button>
 			<button id="btn-reset-scores">Reset scores</button>
+			<button id="btn-end-party">End party</button>
 		</div>
 	</section>
 </main>

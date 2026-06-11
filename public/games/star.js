@@ -443,6 +443,11 @@ export default {
 		}
 
 		function rotate() { orientIdx++; renderTray(); renderGhost(); }
+		root.addEventListener('contextmenu', e => {	// right-click spins the held piece
+			if (selected === null) return;
+			e.preventDefault();
+			rotate();
+		});
 		root.querySelector('.st-rotate').addEventListener('click', rotate);
 		const onKey = e => {
 			if (e.key === 'r' || e.key === 'R' || e.key === 'f' || e.key === 'F') rotate();

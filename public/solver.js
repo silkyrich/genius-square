@@ -36,7 +36,7 @@ export const union = (a, b) => [(a[0] | b[0]) >>> 0, (a[1] | b[1]) >>> 0];
 export const PIECES = [
 	{ key: 'single',   color: '#2563eb', orients: [[[0,0]]] },
 	{ key: 'line2',    color: '#9a3412', orients: [[[0,0],[0,1]], [[0,0],[1,0]]] },
-	{ key: 'line3',    color: '#f59e0b', orients: [[[0,0],[0,1],[0,2]], [[0,0],[1,0],[2,0]]] },
+	{ key: 'line3',    color: '#f97316', orients: [[[0,0],[0,1],[0,2]], [[0,0],[1,0],[2,0]]] },
 	{ key: 'line4',    color: '#6b7280', orients: [[[0,0],[0,1],[0,2],[0,3]], [[0,0],[1,0],[2,0],[3,0]]] },
 	{ key: 'square',   color: '#16a34a', orients: [[[0,0],[0,1],[1,0],[1,1]]] },
 	{ key: 'lblock2',  color: '#9333ea', orients: [

@@ -342,6 +342,18 @@ export class Room {
 			}
 			await this.putGame(g);
 			break;
+		case 'endParty': {
+			// Host disbands the party: everyone out, state gone, delisted.
+			if (!isMaster) break;
+			await this.heartbeatDirectory({ ...g, isPublic: false }, 0);
+			for (const sock of this.state.getWebSockets()) {
+				try { sock.send(JSON.stringify({ t: 'kicked', reason: 'the host ended the party' })); } catch {}
+				sock.close(4002, 'party ended');
+			}
+			await this.state.storage.deleteAlarm();
+			await this.state.storage.deleteAll();
+			return;
+		}
 		case 'resetScores':
 			if (!isMaster) break;
 			g.scores = Object.fromEntries(Object.keys(g.scores).map(n => [n, 0]));

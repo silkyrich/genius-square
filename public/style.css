@@ -88,7 +88,11 @@ button.big { font-size: 1.1rem; padding: .7rem 1.6rem; margin: .8rem 0 .4rem; wi
 .game-card .gc-icon { font-size: 1.5rem; }
 .game-card b { font-size: .85rem; }
 .game-card small { color: var(--muted); font-size: .68rem; line-height: 1.25; }
-#game-options { display: flex; flex-direction: column; gap: .4rem; margin: .5rem 0 .7rem; }
+#card-panel {
+	grid-column: 1 / -1; background: var(--surface-2); border: 2px solid var(--accent);
+	border-radius: 12px; padding: .6rem .7rem; margin: -.1rem 0 .2rem;
+}
+#game-options { display: flex; flex-direction: column; gap: .4rem; margin: 0 0 .6rem; }
 #game-options label { font-size: .9rem; }
 #agree-row { display: flex; gap: .5rem; margin-top: .5rem; }
 
@@ -101,6 +105,10 @@ button.big { font-size: 1.1rem; padding: .7rem 1.6rem; margin: .8rem 0 .4rem; wi
 #game-status.bad { color: var(--bad); font-weight: 700; }
 #game-status.won { color: var(--gold); font-weight: 800; }
 #round-game-label { margin: 0; text-align: center; }
+#game-help { margin: 0; max-width: 470px; text-align: center; font-size: .82rem; }
+#game-help summary { cursor: pointer; color: var(--accent); font-weight: 600; list-style: none; }
+#game-help[open] summary { margin-bottom: .25rem; }
+.chat-msg a { color: var(--accent); word-break: break-all; }
 
 button, select, input {
 	font: inherit; padding: .45rem .8rem; border-radius: 10px;
@@ -223,12 +231,18 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 #qr-box svg { width: min(70vw, 280px); height: auto; border-radius: 8px; }
 #qr-link { word-break: break-all; }
 
-/* wider screens: two columns */
+/* wider screens: two columns — explicit rows so the side panels stack
+   tight under each other instead of auto-flowing below the tall board */
 @media (min-width: 760px) {
-	main { max-width: 880px; display: grid; grid-template-columns: 1fr 280px; align-items: start; }
+	main {
+		max-width: 1100px; display: grid; align-items: start;
+		grid-template-columns: minmax(0, 1fr) 360px;
+		grid-template-rows: auto auto auto auto 1fr;
+	}
 	#landing, #room-strip, #banner { grid-column: 1 / -1; }
-	#lobby { grid-column: 1; }
-	#players-panel { grid-column: 2; }
-	#chat-panel { grid-column: 2; }
-	#play-area { grid-column: 1; }
+	#lobby, #play-area { grid-column: 1; grid-row: 3 / span 3; }
+	#players-panel { grid-column: 2; grid-row: 3; }
+	#chat-panel { grid-column: 2; grid-row: 4; }
+	#chat-log { max-height: 44vh; }
+	.player .pmini { min-width: 84px; }
 }

@@ -98,6 +98,8 @@ export default {
 					{ method: 'POST', body: JSON.stringify({ id: entry.id, issue }) });
 			return Response.json({ ok: true, id: entry.id, issue });
 		}
+		if (url.pathname === '/api/feedback/mark' && request.method === 'POST')
+			return fbStub().fetch('https://feedback/mark-filed', { method: 'POST', body: await request.text() });
 		const fbImg = url.pathname.match(/^\/api\/feedback\/img\/([a-z0-9-]{12})$/);
 		if (fbImg) return fbStub().fetch(`https://feedback/img/${fbImg[1]}`);
 		if (url.pathname === '/api/feedback/list')
