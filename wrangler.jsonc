@@ -11,12 +11,14 @@
 	"durable_objects": {
 		"bindings": [
 			{ "name": "ROOM", "class_name": "Room" },
-			{ "name": "DIRECTORY", "class_name": "Directory" }
+			{ "name": "DIRECTORY", "class_name": "Directory" },
+			{ "name": "FEEDBACK", "class_name": "Feedback" }
 		]
 	},
 	"migrations": [
 		{ "tag": "v1", "new_sqlite_classes": ["Room"] },
-		{ "tag": "v2", "new_sqlite_classes": ["Directory"] }
+		{ "tag": "v2", "new_sqlite_classes": ["Directory"] },
+		{ "tag": "v3", "new_sqlite_classes": ["Feedback"] }
 	],
 	"routes": [
 		{ "pattern": "genius-square.richmorgan.co.uk", "custom_domain": true }

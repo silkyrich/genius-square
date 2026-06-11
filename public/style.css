@@ -156,6 +156,15 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 .game-card.locked .gc-lock { opacity: 1; }
 .player .boot { font-size: .65rem; padding: .1rem .4rem; color: var(--bad); }
 
+/* feedback */
+#btn-feedback { font-size: 1rem; padding: .2rem .5rem; }
+#fb-shot { width: 100%; max-height: 180px; object-fit: contain; border-radius: 8px; border: 1px solid var(--border); }
+#fb-text { display: block; width: 100%; margin: .6rem 0; font: inherit; padding: .5rem; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); resize: vertical; }
+#fb-include { font-size: .8rem; color: var(--muted); display: block; margin-top: .4rem; }
+#fb-buttons { display: flex; gap: .5rem; justify-content: center; }
+#feedback-modal { text-align: left; width: min(90vw, 420px); }
+#feedback-modal h2, #fb-buttons { text-align: center; }
+
 /* event toasts */
 #toasts {
 	position: fixed; top: 56px; left: 50%; transform: translateX(-50%);

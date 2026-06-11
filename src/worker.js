@@ -3,6 +3,35 @@
 // with per-party Open Graph tags, and routes WebSockets to room DOs.
 export { Room } from './room.js';
 export { Directory } from './directory.js';
+export { Feedback } from './feedback.js';
+
+const LINEAR_TEAM = '55b5b491-1fec-45d3-8381-4b32a9a2e7a3';		// Automated-learning
+const LINEAR_PROJECT = '17c2fc91-3006-4057-b03c-09c7be5645ee';	// Genius Square Web
+
+// File a stored feedback entry as a Linear issue (when a key is configured).
+async function fileToLinear(env, entry, origin) {
+	if (!env.LINEAR_API_KEY) return null;
+	const img = entry.hasImage ? `\n\n![screenshot](${origin}/api/feedback/img/${entry.id})` : '';
+	const m = entry.meta;
+	const description = `${entry.text}\n\n---\n` +
+		`**From:** ${m.player || 'guest'}\n**URL:** ${m.url}\n**Party:** ${m.party || '—'} ` +
+		`(${m.phase || '—'}${m.game ? ', playing ' + m.game : ''})\n**UA:** ${m.ua}${img}`;
+	const res = await fetch('https://api.linear.app/graphql', {
+		method: 'POST',
+		headers: { 'content-type': 'application/json', authorization: env.LINEAR_API_KEY },
+		body: JSON.stringify({
+			query: `mutation($input: IssueCreateInput!) {
+				issueCreate(input: $input) { success issue { identifier } } }`,
+			variables: { input: {
+				teamId: LINEAR_TEAM, projectId: LINEAR_PROJECT,
+				title: 'In-app feedback: ' + entry.text.slice(0, 60),
+				description, priority: 3,
+			} },
+		}),
+	});
+	const d = await res.json().catch(() => null);
+	return d?.data?.issueCreate?.issue?.identifier || null;
+}
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ';	// no I/L/O/0/1 lookalikes
 
@@ -53,6 +82,26 @@ export default {
 			for (const b of rand) code += ROOM_CODE_ALPHABET[b % ROOM_CODE_ALPHABET.length];
 			return Response.json({ code });
 		}
+
+		// In-app feedback: store in the Feedback DO, then file to Linear
+		// directly when LINEAR_API_KEY is configured.
+		const fbStub = () => env.FEEDBACK.get(env.FEEDBACK.idFromName('main'));
+		if (url.pathname === '/api/feedback' && request.method === 'POST') {
+			const stored = await fbStub().fetch('https://feedback/submit',
+				{ method: 'POST', body: await request.text() });
+			if (!stored.ok) return stored;
+			const entry = await stored.json();
+			let issue = null;
+			try { issue = await fileToLinear(env, entry, url.origin); } catch {}
+			if (issue)
+				await fbStub().fetch('https://feedback/mark-filed',
+					{ method: 'POST', body: JSON.stringify({ id: entry.id, issue }) });
+			return Response.json({ ok: true, id: entry.id, issue });
+		}
+		const fbImg = url.pathname.match(/^\/api\/feedback\/img\/([a-z0-9-]{12})$/);
+		if (fbImg) return fbStub().fetch(`https://feedback/img/${fbImg[1]}`);
+		if (url.pathname === '/api/feedback/list')
+			return fbStub().fetch('https://feedback/list');
 
 		// Public party directory for the landing page.
 		if (url.pathname === '/api/parties')

@@ -19,6 +19,7 @@
 <header>
 	<img src="/icon.png" alt="" id="logo">
 	<h1>Puzzle Party</h1>
+	<button id="btn-feedback" title="report a problem / give feedback">🐞</button>
 	<button id="btn-theme" title="dark / light">◐</button>
 	<div id="who">
 		<span id="identity"></span>
@@ -134,6 +135,20 @@
 		<input id="name-input" placeholder="your name" maxlength="24" required autocomplete="name">
 		<button class="primary">Play</button>
 	</form>
+</dialog>
+
+<!-- feedback modal -->
+<dialog id="feedback-modal">
+	<h2>Feedback / bug report</h2>
+	<p class="muted">Goes straight to the dev board, with a screenshot of what you're seeing.</p>
+	<img id="fb-shot" alt="screenshot preview" hidden>
+	<label id="fb-include"><input type="checkbox" id="fb-attach" checked> attach screenshot</label>
+	<textarea id="fb-text" rows="4" placeholder="What happened? What did you expect?" maxlength="2000"></textarea>
+	<div id="fb-buttons">
+		<button id="fb-send" class="primary">Send</button>
+		<button id="fb-cancel" type="button">Cancel</button>
+	</div>
+	<p id="fb-status" class="muted"></p>
 </dialog>
 
 <!-- QR modal -->

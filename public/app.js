@@ -586,6 +586,62 @@ function renderPlayers(g, ps) {
 	}
 }
 
+// ---------- feedback -> Linear ----------
+let fbShotData = null;
+$('btn-feedback').addEventListener('click', async () => {
+	fbShotData = null;
+	$('fb-shot').hidden = true;
+	$('fb-status').textContent = 'capturing screenshot…';
+	$('feedback-modal').showModal();
+	try {
+		// lazy-load the renderer; capture happens before the dialog paints over much
+		const { default: html2canvas } = await import('/vendor/html2canvas.mjs');
+		$('feedback-modal').close();	// don't capture the dialog itself
+		await new Promise(r => setTimeout(r, 60));
+		const canvas = await html2canvas(document.body, {
+			windowWidth: innerWidth, windowHeight: innerHeight,
+			x: scrollX, y: scrollY, width: innerWidth, height: innerHeight,
+			logging: false,
+		});
+		fbShotData = canvas.toDataURL('image/jpeg', 0.55);
+		$('fb-shot').src = fbShotData;
+		$('fb-shot').hidden = false;
+	} catch { fbShotData = null; }
+	$('fb-status').textContent = '';
+	$('feedback-modal').showModal();
+});
+$('fb-cancel').addEventListener('click', () => $('feedback-modal').close());
+$('fb-send').addEventListener('click', async () => {
+	const text = $('fb-text').value.trim();
+	if (!text) { $('fb-status').textContent = 'say a little something first'; return; }
+	$('fb-send').disabled = true;
+	$('fb-status').textContent = 'sending…';
+	try {
+		const r = await (await fetch('/api/feedback', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({
+				text,
+				image: $('fb-attach').checked ? fbShotData : null,
+				meta: {
+					url: location.href,
+					party: roomCode || '',
+					game: game?.phase === 'playing' ? game.puzzle?.game : '',
+					phase: game?.phase || 'landing',
+					player: me.name || '',
+					ua: navigator.userAgent,
+				},
+			}),
+		})).json();
+		$('fb-text').value = '';
+		$('feedback-modal').close();
+		toast(r.issue ? `🐞 filed as ${r.issue} — thank you!` : '🐞 feedback sent — thank you!');
+	} catch {
+		$('fb-status').textContent = 'failed to send — try again?';
+	}
+	$('fb-send').disabled = false;
+});
+
 // ---------- chat ----------
 $('chat-form').addEventListener('submit', ev => {
 	ev.preventDefault();
