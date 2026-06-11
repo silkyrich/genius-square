@@ -7,7 +7,7 @@
 	"scripts": {
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy",
-		"test": "node test/solver.test.js && node test/sudoku.test.js && node test/boggle.test.js && node test/pipes.test.js && node test/star.test.js"
+		"test": "node test/solver.test.js && node test/sudoku.test.js && node test/boggle.test.js && node test/pipes.test.js && node test/star.test.js && node test/nonogram.test.js && node test/lightsout.test.js && node test/mines.test.js && node test/wordsearch.test.js && node test/g2048.test.js && node test/trio.test.js && node test/memory.test.js && node test/kenken.test.js"
 	},
 	"devDependencies": {
 		"wrangler": "^4.99.0"

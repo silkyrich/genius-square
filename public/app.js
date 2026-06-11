@@ -5,10 +5,18 @@ import gs from '/games/genius-square.js';
 import sudoku from '/games/sudoku.js';
 import boggle from '/games/boggle.js';
 import pipes from '/games/pipes.js';
+import lightsout from '/games/lightsout.js';
 import star from '/games/star.js';
+import mines from '/games/mines.js';
+import nonogram from '/games/nonogram.js';
+import wordsearch from '/games/wordsearch.js';
+import memory from '/games/memory.js';
+import trio from '/games/trio.js';
+import g2048 from '/games/g2048.js';
+import kenken from '/games/kenken.js';
 import qrcode from '/vendor/qrcode.mjs';
 
-const GAMES = Object.fromEntries([gs, star, sudoku, boggle, pipes].map(m => [m.key, m]));
+const GAMES = Object.fromEntries([gs, star, sudoku, kenken, boggle, pipes, nonogram, lightsout, mines, wordsearch, memory, trio, g2048].map(m => [m.key, m]));
 
 const THEMES = {
 	classic: { label: '🎲 Classic' },

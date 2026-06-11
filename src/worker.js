@@ -79,7 +79,7 @@ export default {
 			html = html
 				.replaceAll('Puzzle Party — race your friends',
 					`Join my Puzzle Party ${code}!`)
-				.replace('content="Genius Square, Sudoku and Boggle',
+				.replace('content="A growing shelf of puzzle games',
 					`content="Tap to join party ${code} and race.`);
 			return new Response(html, {
 				headers: { 'content-type': 'text/html; charset=utf-8' },
