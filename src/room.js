@@ -33,6 +33,7 @@ export class Room {
 			g.lockedGames ||= [];
 			g.events ||= [];
 			g.banned ||= [];
+			g.name ||= '';
 			return g;
 		}
 		return {
@@ -52,6 +53,7 @@ export class Room {
 			lockedGames: [],	// game keys the host has locked
 			events: [],		// [{ name, kind, ts }] — stuck/boom/near, capped
 			banned: [],
+			name: '',		// host-chosen party name
 		};
 	}
 	async putGame(g) { await this.state.storage.put('game', g); }
@@ -119,6 +121,14 @@ export class Room {
 			} catch {}
 		}
 		await this.heartbeatDirectory(g, players.length);
+		// While public with players connected, keep the directory entry fresh
+		// even if nobody touches anything (hibernation-safe).
+		if (g.isPublic && players.length)
+			await this.state.storage.setAlarm(Date.now() + 60_000);
+	}
+
+	async alarm() {
+		await this.broadcast();
 	}
 
 	// Keep the public directory fresh (or remove ourselves when private/empty).
@@ -136,6 +146,7 @@ export class Room {
 						players: playerCount,
 						game: g.phase === 'playing' ? g.puzzle?.game : (g.proposal?.game || 'lobby'),
 						phase: g.phase,
+						name: g.name,
 					}),
 				});
 		} catch {}
@@ -221,6 +232,11 @@ export class Room {
 			await this.putGame(g);
 			break;
 		}
+		case 'rename':
+			if (!isMaster) break;
+			g.name = String(msg.name || '').trim().slice(0, 40);
+			await this.putGame(g);
+			break;
 		case 'lockGames':
 			if (!isMaster) break;
 			g.lockedGames = (Array.isArray(msg.keys) ? msg.keys : []).slice(0, 30).map(String);

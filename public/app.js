@@ -107,6 +107,11 @@ $('btn-share').addEventListener('click', async () => {
 		setTimeout(() => $('btn-share').textContent = 'Share party', 1500);
 	}
 });
+$('btn-leave').addEventListener('click', () => location.href = '/');
+$('btn-rename').addEventListener('click', () => {
+	const name = prompt('Name this party', game?.name || '');
+	if (name !== null) send({ t: 'rename', name: name.trim() });
+});
 $('btn-qr').addEventListener('click', () => {
 	const qr = qrcode(0, 'M');
 	qr.addData(roomUrl());
@@ -396,6 +401,44 @@ function celebrate() {
 	setTimeout(() => burst.remove(), 3200);
 }
 
+// ---------- my parties (local history) ----------
+function rememberParty(g) {
+	if (!roomCode) return;
+	const list = JSON.parse(localStorage.getItem('gs-parties') || '[]')
+		.filter(p => p.code !== roomCode);
+	list.unshift({ code: roomCode, name: g.name || '', host: g.master,
+		mine: g.master === me.name, ts: Date.now() });
+	localStorage.setItem('gs-parties', JSON.stringify(list.slice(0, 12)));
+}
+
+function renderMyParties() {
+	const list = JSON.parse(localStorage.getItem('gs-parties') || '[]');
+	$('my-parties-head').hidden = !list.length;
+	const box = $('my-parties');
+	box.innerHTML = '';
+	for (const p of list) {
+		const card = document.createElement('button');
+		card.type = 'button';
+		card.className = 'party-card';
+		const when = new Date(p.ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+		card.innerHTML = `<b>${p.mine ? '👑 ' : ''}${p.code}${p.name ? ' · ' + p.name : ''}</b>
+			<small>${p.mine ? 'your party' : 'host: ' + (p.host || '?')} · last visited ${when}</small>`;
+		card.addEventListener('click', () => enterParty(p.code));
+		const x = document.createElement('span');
+		x.className = 'party-x';
+		x.textContent = '✕';
+		x.title = 'forget this party';
+		x.addEventListener('click', ev => {
+			ev.stopPropagation();
+			localStorage.setItem('gs-parties', JSON.stringify(
+				JSON.parse(localStorage.getItem('gs-parties') || '[]').filter(q => q.code !== p.code)));
+			renderMyParties();
+		});
+		card.appendChild(x);
+		box.appendChild(card);
+	}
+}
+
 // ---------- event toasts ----------
 let lastEventTs = 0, eventsPrimed = false;
 const EVENT_TEXT = {
@@ -486,6 +529,9 @@ function applyState(g, ps) {
 	} else banner.hidden = true;
 
 	// scores & players
+	$('room-label').textContent = `PARTY ${roomCode}${g.name ? ' · ' + g.name : ''}`;
+	$('btn-rename').hidden = !isMaster;
+	rememberParty(g);
 	$('round-label').textContent = g.round ? `round ${g.round}` : '';
 	$('master-room-controls').hidden = !isMaster;
 	$('btn-end-round').hidden = !playing;
@@ -574,13 +620,16 @@ async function refreshParties() {
 		const list = await (await fetch('/api/parties')).json();
 		const box = $('public-parties');
 		box.innerHTML = '';
-		$('parties-head').hidden = !list.length;
+		if (!list.length) {
+			box.innerHTML = '<p class="muted">No open parties right now — start one and flip on “discoverable”.</p>';
+			return;
+		}
 		for (const p of list) {
 			const mod = GAMES[p.game];
 			const card = document.createElement('button');
 			card.type = 'button';
 			card.className = 'party-card';
-			card.innerHTML = `<b>🎲 ${p.code}</b>
+			card.innerHTML = `<b>🎲 ${p.code}${p.name ? ' · ' + p.name : ''}</b>
 				<span>${p.host || 'someone'} · ${p.players} player${p.players === 1 ? '' : 's'}</span>
 				<small>${p.phase === 'playing' ? `playing ${mod?.name || p.game}` : 'in the lobby'}</small>`;
 			card.addEventListener('click', () => enterParty(p.code));
@@ -600,6 +649,7 @@ const urlRoom = location.pathname.match(/^\/r\/([A-Za-z]{4})$/);
 if (urlRoom) await enterParty(urlRoom[1].toUpperCase());	// shared link: straight in
 else {
 	$('landing').hidden = false;			// fresh visit: landing page
+	renderMyParties();
 	refreshParties();
 	partiesTimer = setInterval(refreshParties, 10000);
 }

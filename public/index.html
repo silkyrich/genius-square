@@ -39,15 +39,19 @@
 			<input id="join-code" placeholder="or enter a party code" maxlength="4" autocapitalize="characters">
 			<button id="btn-join">Join</button>
 		</div>
-		<h3 id="parties-head" hidden>Open parties</h3>
-		<div id="public-parties"></div>
+		<h3 id="my-parties-head" hidden>Your parties</h3>
+		<div id="my-parties"></div>
+		<h3>Open parties</h3>
+		<div id="public-parties"><p class="muted" id="no-parties">No open parties right now — start one and flip on "discoverable".</p></div>
 	</section>
 
 	<!-- share / party strip -->
 	<section id="room-strip" hidden>
 		<span id="room-label"></span>
+		<button id="btn-rename" title="name this party" hidden>✏️</button>
 		<button id="btn-share">Share party</button>
 		<button id="btn-qr">QR</button>
+		<button id="btn-leave" title="leave this party">Leave</button>
 	</section>
 
 	<!-- winner / round banner -->

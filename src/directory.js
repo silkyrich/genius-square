@@ -19,10 +19,10 @@ export class Directory {
 			if (!e.public || !e.players) await this.state.storage.delete(e.code);
 			else await this.state.storage.put(e.code, {
 				code: e.code,
+				name: String(e.name || '').slice(0, 40),
 				host: String(e.host || '').slice(0, 24),
 				players: Number(e.players) || 0,
 				game: String(e.game || '').slice(0, 24),
-				theme: String(e.theme || '').slice(0, 24),
 				phase: String(e.phase || '').slice(0, 16),
 				ts: Date.now(),
 			});

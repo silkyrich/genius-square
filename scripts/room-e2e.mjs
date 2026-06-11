@@ -32,6 +32,13 @@ ok(bob.state.game.isPublic === true, 'visibility broadcast');
 const parties = await (await fetch('http://localhost:8787/api/parties')).json();
 ok(parties.some(p => p.code === code), 'party listed in directory');
 
+// rename -> directory carries it
+alice.send({ t: 'rename', name: 'Friday Night Crew' });
+await sleep(400);
+ok(bob.state.game.name === 'Friday Night Crew', 'party name broadcast');
+const named = await (await fetch('http://localhost:8787/api/parties')).json();
+ok(named.some(p => p.code === code && p.name === 'Friday Night Crew'), 'directory lists party name');
+
 // playlist + locks
 alice.send({ t: 'playlist', list: [
 	{ game: 'gs', label: 'Genius Square', options: { difficulty: 'easy' } },
