@@ -1,10 +1,13 @@
-// One Durable Object per room — the whole game loop lives here.
+// One Durable Object per party — the whole game loop lives here, and it is
+// game-agnostic: the proposal carries an opaque per-game payload that only
+// the clients interpret (Genius Square, Sudoku, Boggle, ...).
 //
-// Roles: the first player to join is the puzzle master. The master proposes
-// a puzzle (difficulty tier + optional solution-count hint); other players
-// agree; when everyone has agreed (or the master force-starts) the round
-// begins. Players race; finish order earns points (3/2/1); scores roll up
-// across rounds. The master can clear a round or reset scores.
+// Roles: the first player to join is the party master. The master proposes
+// a round (game + options); other players agree; when everyone has agreed
+// (or the master force-starts) the round begins. Two scoring modes:
+//   race   — finish order earns podium points (first to solve wins)
+//   points — everyone plays until the clock runs out, podium by score
+// Party scores roll up across rounds and across games.
 //
 // Phases: lobby -> proposed -> playing -> lobby ...
 //
@@ -15,24 +18,32 @@
 const PODIUM = [3, 2, 1];
 
 export class Room {
-	constructor(state) {
+	constructor(state, env) {
 		this.state = state;
+		this.env = env;
 	}
 
 	async game() {
 		const g = await this.state.storage.get('game');
-		if (g) { g.chat ||= []; return g; }	// rooms created before chat existed
+		if (g) {
+			g.chat ||= [];
+			g.theme ||= 'classic';
+			g.isPublic ??= false;
+			return g;
+		}
 		return {
 			phase: 'lobby',
 			round: 0,
 			master: null,
-			puzzle: null,		// { cells, tier, count, showCount, showDead, explore }
+			puzzle: null,		// { game, summary, scoreMode, durationMs, payload }
 			proposal: null,		// same shape, while phase == 'proposed'
 			agreed: [],
-			finishOrder: [],	// [{ name, ms }]
-			scores: {},		// name -> points
-			lastResult: null,	// { round, winner, order: [{name, ms, points}] }
+			finishOrder: [],	// race: [{name, ms}] in arrival order; points: [{name, points}]
+			scores: {},		// name -> party points, across games
+			lastResult: null,	// { round, game, winner, order: [{name, ms?, points?, awarded}] }
 			chat: [],		// [{ name, text, ts }], capped
+			theme: 'classic',
+			isPublic: false,
 		};
 	}
 	async putGame(g) { await this.state.storage.put('game', g); }
@@ -49,6 +60,9 @@ export class Room {
 			return new Response('expected websocket', { status: 426 });
 
 		const url = new URL(request.url);
+		const code = request.headers.get('X-Room-Code');
+		if (code && !(await this.state.storage.get('code')))
+			await this.state.storage.put('code', code);
 		const name = request.headers.get('X-Player-Email')
 			|| url.searchParams.get('name')
 			|| 'anonymous';
@@ -64,8 +78,10 @@ export class Room {
 		pair[1].serializeAttachment({
 			id: crypto.randomUUID().slice(0, 8),
 			name,
-			placements: {},
+			progress: null,		// opaque per-game blob, relayed to other players
+			stuck: false,
 			finishedMs: null,
+			finishedPts: null,
 		});
 
 		const g = await this.game();
@@ -91,6 +107,28 @@ export class Room {
 				ws.send(JSON.stringify({ t: 'state', you: att.id, game: g, players }));
 			} catch {}
 		}
+		await this.heartbeatDirectory(g, players.length);
+	}
+
+	// Keep the public directory fresh (or remove ourselves when private/empty).
+	async heartbeatDirectory(g, playerCount) {
+		const code = await this.state.storage.get('code');
+		if (!code || !this.env?.DIRECTORY) return;
+		try {
+			await this.env.DIRECTORY.get(this.env.DIRECTORY.idFromName('main'))
+				.fetch('https://directory/update', {
+					method: 'POST',
+					body: JSON.stringify({
+						code,
+						public: g.isPublic,
+						host: g.master,
+						players: playerCount,
+						game: g.phase === 'playing' ? g.puzzle?.game : (g.proposal?.game || 'lobby'),
+						theme: g.theme,
+						phase: g.phase,
+					}),
+				});
+		} catch {}
 	}
 
 	async startRound(g) {
@@ -102,7 +140,7 @@ export class Room {
 		g.finishOrder = [];
 		for (const ws of this.state.getWebSockets()) {
 			const a = ws.deserializeAttachment();
-			a.placements = {}; a.finishedMs = null; a.stuck = false;
+			a.progress = null; a.stuck = false; a.finishedMs = null; a.finishedPts = null;
 			ws.serializeAttachment(a);
 		}
 		await this.putGame(g);
@@ -110,11 +148,20 @@ export class Room {
 
 	async endRound(g) {
 		g.phase = 'lobby';
+		const points = g.puzzle?.scoreMode === 'points';
+		const order = points
+			? [...g.finishOrder].sort((a, b) => (b.points || 0) - (a.points || 0))
+			: g.finishOrder;
+		const awarded = order.map((f, i) => {
+			const pts = points && !(f.points > 0) ? 0 : (PODIUM[i] ?? 0);	// no podium for a zero score
+			g.scores[f.name] = (g.scores[f.name] || 0) + pts;
+			return { ...f, awarded: pts };
+		});
 		g.lastResult = {
 			round: g.round,
-			winner: g.finishOrder[0]?.name ?? null,
-			order: g.finishOrder.map((f, i) =>
-				({ ...f, points: PODIUM[i] ?? 0 })),
+			game: g.puzzle?.game,
+			winner: awarded[0]?.awarded ? awarded[0].name : null,
+			order: awarded,
 		};
 		await this.putGame(g);
 	}
@@ -127,22 +174,14 @@ export class Room {
 		const isMaster = att.name === g.master;
 
 		switch (msg.t) {
-		// ----- board sync (any phase; placements are per-player) -----
-		case 'place':
-			if (typeof msg.piece === 'string' && Array.isArray(msg.cells))
-				att.placements[msg.piece] = msg.cells.filter(c => Number.isInteger(c) && c >= 0 && c < 36);
+		// ----- per-player progress (opaque to the server) -----
+		case 'progress': {
+			const s = JSON.stringify(msg.data ?? null);
+			if (s.length > 4096) break;
+			att.progress = msg.data;
 			ws.serializeAttachment(att);
 			break;
-		case 'remove':
-			delete att.placements[msg.piece];
-			att.finishedMs = null;
-			ws.serializeAttachment(att);
-			break;
-		case 'clear':
-			att.placements = {};
-			att.finishedMs = null;
-			ws.serializeAttachment(att);
-			break;
+		}
 		case 'stuck':	// client-computed dead-end flag, shown to OTHER players
 			att.stuck = !!msg.stuck;
 			ws.serializeAttachment(att);
@@ -156,24 +195,38 @@ export class Room {
 			break;
 		}
 
+		// ----- party settings (master) -----
+		case 'theme':
+			if (!isMaster) break;
+			g.theme = String(msg.key || 'classic').slice(0, 24);
+			await this.putGame(g);
+			break;
+		case 'visibility':
+			if (!isMaster) break;
+			g.isPublic = !!msg.public;
+			await this.putGame(g);
+			break;
+
 		// ----- game flow -----
-		case 'propose':
+		case 'propose': {
 			if (!isMaster || g.phase === 'playing') break;
-			if (!Array.isArray(msg.puzzle?.cells) || msg.puzzle.cells.length !== 7) break;
+			const p = msg.puzzle;
+			if (!p || typeof p.game !== 'string') break;
+			if (JSON.stringify(p.payload ?? null).length > 32768) break;
 			g.proposal = {
-				cells: msg.puzzle.cells,
-				tier: String(msg.puzzle.tier || ''),
-				count: Number(msg.puzzle.count) || 0,
-				showCount: !!msg.puzzle.showCount,
-				showDead: msg.puzzle.showDead !== false,	// the dead-end warning is a big hint; master may turn it off
-				explore: !!msg.puzzle.explore,
+				game: p.game.slice(0, 24),
+				summary: String(p.summary || '').slice(0, 120),
+				scoreMode: p.scoreMode === 'points' ? 'points' : 'race',
+				durationMs: Number(p.durationMs) || 0,
+				payload: p.payload ?? null,
 			};
 			g.phase = 'proposed';
 			g.agreed = [att.name];
-			// Solo room: no one to agree with — go.
+			// Solo party: no one to agree with — go.
 			if (this.connectedNames().length === 1) await this.startRound(g);
 			else await this.putGame(g);
 			break;
+		}
 		case 'agree':
 			if (g.phase !== 'proposed') break;
 			if (!g.agreed.includes(att.name)) g.agreed.push(att.name);
@@ -185,22 +238,30 @@ export class Room {
 		case 'start':	// master force-start
 			if (isMaster && g.phase === 'proposed') await this.startRound(g);
 			break;
-		case 'finish':
-			if (g.phase !== 'playing' || !Number.isFinite(msg.ms)) break;
+		case 'finish': {
+			if (g.phase !== 'playing') break;
 			if (g.finishOrder.some(f => f.name === att.name)) break;
-			att.finishedMs = msg.ms;
-			ws.serializeAttachment(att);
-			g.finishOrder.push({ name: att.name, ms: msg.ms });
-			g.scores[att.name] = (g.scores[att.name] || 0) + (PODIUM[g.finishOrder.length - 1] ?? 0);
+			if (g.puzzle?.scoreMode === 'points') {
+				const points = Number(msg.points) || 0;
+				att.finishedPts = points;
+				ws.serializeAttachment(att);
+				g.finishOrder.push({ name: att.name, points });
+			} else {
+				if (!Number.isFinite(msg.ms)) break;
+				att.finishedMs = msg.ms;
+				ws.serializeAttachment(att);
+				g.finishOrder.push({ name: att.name, ms: msg.ms });
+			}
 			if (this.connectedNames().every(n => g.finishOrder.some(f => f.name === n)))
 				await this.endRound(g);
 			else
 				await this.putGame(g);
 			break;
+		}
 		case 'endRound':	// master ends a stuck round
 			if (isMaster && g.phase === 'playing') await this.endRound(g);
 			break;
-		case 'clearRound':	// the room "clear" button (master)
+		case 'clearRound':	// the party "clear" button (master)
 			if (!isMaster) break;
 			g.phase = 'lobby';
 			g.proposal = null;
@@ -208,7 +269,7 @@ export class Room {
 			g.finishOrder = [];
 			for (const sock of this.state.getWebSockets()) {
 				const a = sock.deserializeAttachment();
-				a.placements = {}; a.finishedMs = null; a.stuck = false;
+				a.progress = null; a.stuck = false; a.finishedMs = null; a.finishedPts = null;
 				sock.serializeAttachment(a);
 			}
 			await this.putGame(g);

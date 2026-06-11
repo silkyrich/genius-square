@@ -1,10 +1,25 @@
-import { PIECES, PIECE_INDEX, cellIndex, nameToIndex, solve, countSolutions, enumerateSolutions } from '/solver.js';
+// Puzzle Party orchestrator: identity, party lifecycle, lobby (game picker,
+// themes, discoverability), round flow and scoring. Gameplay itself lives in
+// game modules (public/games/*) behind a tiny shared interface.
+import gs from '/games/genius-square.js';
+import sudoku from '/games/sudoku.js';
+import boggle from '/games/boggle.js';
+import pipes from '/games/pipes.js';
+import star from '/games/star.js';
 import qrcode from '/vendor/qrcode.mjs';
 
-const $ = id => document.getElementById(id);
-const boardEl = $('board'), trayEl = $('tray'), playersEl = $('players');
+const GAMES = Object.fromEntries([gs, star, sudoku, boggle, pipes].map(m => [m.key, m]));
 
-// ---------- theme ----------
+const THEMES = {
+	classic: { label: '🎲 Classic' },
+	pokemon: { label: '⚡ Pokémon' },
+	tigertea: { label: '🐯 Tiger Tea' },
+};
+
+const $ = id => document.getElementById(id);
+const playersEl = $('players');
+
+// ---------- theme (light/dark is personal; the skin is the party's) ----------
 const themePref = localStorage.getItem('gs-theme')
 	|| (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
 document.documentElement.dataset.theme = themePref;
@@ -41,11 +56,11 @@ $('btn-logout').addEventListener('click', () => {
 	location.href = '/logout';
 });
 
-// ---------- room & connection ----------
+// ---------- party & connection ----------
 let ws = null, roomCode = null, myId = null, game = null, players = [];
 let kicked = false;
 
-async function enterRoom(code) {
+async function enterParty(code) {
 	if (code) roomCode = code;
 	else {
 		const r = await (await fetch('/api/rooms', { method: 'POST' })).json();
@@ -56,7 +71,7 @@ async function enterRoom(code) {
 	$('room-strip').hidden = false;
 	$('players-panel').hidden = false;
 	$('chat-panel').hidden = false;
-	$('room-label').textContent = `ROOM ${roomCode}`;
+	$('room-label').textContent = `PARTY ${roomCode}`;
 	await ensureIdentity();
 	connect();
 }
@@ -82,12 +97,12 @@ const send = msg => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)
 // ---------- share ----------
 const roomUrl = () => `${location.origin}/r/${roomCode}`;
 $('btn-share').addEventListener('click', async () => {
-	const data = { title: 'Genius Square', text: `Race me at Genius Square — room ${roomCode}`, url: roomUrl() };
+	const data = { title: 'Puzzle Party', text: `Join my Puzzle Party — code ${roomCode}`, url: roomUrl() };
 	if (navigator.share) { try { await navigator.share(data); } catch {} }
 	else {
 		await navigator.clipboard.writeText(roomUrl());
 		$('btn-share').textContent = 'Copied!';
-		setTimeout(() => $('btn-share').textContent = 'Share room', 1500);
+		setTimeout(() => $('btn-share').textContent = 'Share party', 1500);
 	}
 });
 $('btn-qr').addEventListener('click', () => {
@@ -99,33 +114,78 @@ $('btn-qr').addEventListener('click', () => {
 	$('qr-modal').showModal();
 });
 
-// ---------- puzzles & difficulty ----------
-let puzzleData = null;
-fetch('/data/puzzles.json').then(r => r.json()).then(d => {
-	puzzleData = d;
-	const sel = $('tier-select');
-	sel.innerHTML = '';
-	for (const t of d.tiers) {
-		const o = document.createElement('option');
-		o.value = t.key;
-		o.textContent = `${t.label} (${t.min === 1 && t.max === 1 ? 'one solution' : t.max ? `${t.min}–${t.max} solutions` : `${t.min}+ solutions`})`;
-		sel.appendChild(o);
-	}
-	sel.value = 'medium';
-});
+// ---------- lobby: game picker + options ----------
+let pickedGame = localStorage.getItem('gs-game') || 'gs';
 
-$('btn-propose').addEventListener('click', () => {
-	if (!puzzleData) return;
-	const tier = $('tier-select').value;
-	const bank = puzzleData.banks[tier];
-	const cells = bank[Math.floor(Math.random() * bank.length)].split(' ').map(nameToIndex);
-	const count = countSolutions(cells, 25000);
-	send({ t: 'propose', puzzle: {
-		cells, tier, count,
-		showCount: $('show-count').checked,
-		showDead: $('show-deadend').checked,
-		explore: $('explore-mode').checked,
-	} });
+function renderGameCards() {
+	const wrap = $('game-cards');
+	wrap.innerHTML = '';
+	for (const mod of Object.values(GAMES)) {
+		const card = document.createElement('button');
+		card.type = 'button';
+		card.className = 'game-card' + (mod.key === pickedGame ? ' picked' : '');
+		card.innerHTML = `<span class="gc-icon">${mod.icon}</span><b>${mod.name}</b><small>${mod.blurb}</small>`;
+		card.addEventListener('click', () => {
+			pickedGame = mod.key;
+			localStorage.setItem('gs-game', mod.key);
+			renderGameCards();
+		});
+		wrap.appendChild(card);
+	}
+	renderGameOptions();
+}
+
+function renderGameOptions() {
+	const mod = GAMES[pickedGame];
+	const box = $('game-options');
+	box.innerHTML = '';
+	for (const def of mod.optionDefs || []) {
+		const label = document.createElement('label');
+		label.className = 'opt-' + def.type;
+		if (def.type === 'select') {
+			label.textContent = def.label + ' ';
+			const sel = document.createElement('select');
+			sel.dataset.opt = def.key;
+			for (const c of def.choices) {
+				const o = document.createElement('option');
+				o.value = c.value; o.textContent = c.label;
+				sel.appendChild(o);
+			}
+			sel.value = def.default;
+			label.appendChild(sel);
+		} else {	// toggle
+			const cb = document.createElement('input');
+			cb.type = 'checkbox';
+			cb.dataset.opt = def.key;
+			cb.checked = !!def.default;
+			label.append(cb, ' ' + def.label);
+		}
+		box.appendChild(label);
+	}
+}
+
+function readOptions() {
+	const out = {};
+	for (const el of $('game-options').querySelectorAll('[data-opt]'))
+		out[el.dataset.opt] = el.type === 'checkbox' ? el.checked : el.value;
+	return out;
+}
+
+$('btn-propose').addEventListener('click', async () => {
+	const mod = GAMES[pickedGame];
+	$('btn-propose').disabled = true;
+	try {
+		const payload = await mod.createPuzzle(readOptions());
+		send({ t: 'propose', puzzle: {
+			game: mod.key,
+			summary: payload.summary,
+			scoreMode: mod.scoreMode,
+			durationMs: payload.duration || mod.durationMs || 0,
+			payload,
+		} });
+	} finally {
+		$('btn-propose').disabled = false;
+	}
 });
 $('btn-agree').addEventListener('click', () => send({ t: 'agree' }));
 $('btn-force').addEventListener('click', () => send({ t: 'start' }));
@@ -135,254 +195,87 @@ $('btn-reset-scores').addEventListener('click', () => {
 	if (confirm('Reset all scores to zero?')) send({ t: 'resetScores' });
 });
 
-// ---------- local play state ----------
-let blockers = [];
-let placed = new Map();
-let selected = null, orientIdx = 0, hoverCell = -1, armedCell = -1;
+// party settings (master)
+{
+	const sel = $('theme-select');
+	for (const [key, t] of Object.entries(THEMES)) {
+		const o = document.createElement('option');
+		o.value = key; o.textContent = t.label;
+		sel.appendChild(o);
+	}
+	sel.addEventListener('change', () => send({ t: 'theme', key: sel.value }));
+	$('public-toggle').addEventListener('change', ev => send({ t: 'visibility', public: ev.target.checked }));
+}
+
+// ---------- round lifecycle ----------
+let handle = null;			// mounted game module instance
 let startTime = 0, timerHandle = 0, finishedLocal = false;
-let lastPhase = null;
-// solution-space explorer
-let exploreSols = [], exploreIdx = 0, exploreTimer = 0, autoCompleting = false;
-const EXPLORE_CAP = 256;
+let lastPhase = null, lastRound = 0;
 
-const tierLabel = key => puzzleData?.tiers.find(t => t.key === key)?.label || key;
-
-// ---------- board ----------
-const cellEls = [];
-for (let i = 0; i < 36; i++) {
-	const el = document.createElement('div');
-	el.className = 'cell';
-	el.addEventListener('pointerdown', ev => onCellPointer(i, ev), { passive: true });
-	el.addEventListener('mouseenter', () => { hoverCell = i; renderGhost(); });
-	el.addEventListener('mouseleave', () => { if (armedCell < 0) { hoverCell = -1; renderGhost(); } });
-	boardEl.appendChild(el);
-	cellEls.push(el);
+function setStatus(text, tone = '') {
+	const el = $('game-status');
+	el.textContent = text || '';
+	el.className = tone;
 }
 
-const pieceAt = cell => {
-	for (const [key, cells] of placed) if (cells.includes(cell)) return key;
-	return null;
-};
-
-function ghostCells() {
-	// Anchor the piece around the touched cell (not its top-left corner) and
-	// clamp inside the board, so a tap lands the piece under your finger and
-	// edge taps still produce an in-board preview.
-	if (selected === null || hoverCell < 0 || placed.has(selected)) return null;
-	const orients = PIECES[PIECE_INDEX[selected]].orients;
-	const orient = orients[orientIdx % orients.length];
-	const maxR = Math.max(...orient.map(o => o[0])), maxC = Math.max(...orient.map(o => o[1]));
-	let r = Math.floor(hoverCell / 6) - (maxR >> 1), c = hoverCell % 6 - (maxC >> 1);
-	r = Math.max(0, Math.min(5 - maxR, r));
-	c = Math.max(0, Math.min(5 - maxC, c));
-	return orient.map(([dr, dc]) => cellIndex(r + dr, c + dc));
-}
-const ghostValid = cells =>
-	cells && cells.every(i => i >= 0 && !blockers.includes(i) && !pieceAt(i));
-
-function renderGhost() {
-	cellEls.forEach(el => el.classList.remove('ghost-ok', 'ghost-bad'));
-	const cells = ghostCells();
-	if (!cells) return;
-	const valid = ghostValid(cells);
-	for (const i of cells) if (i >= 0) cellEls[i].classList.add(valid ? 'ghost-ok' : 'ghost-bad');
-}
-
-function renderBoard() {
-	for (let i = 0; i < 36; i++) {
-		const el = cellEls[i];
-		el.classList.toggle('blocker', blockers.includes(i));
-		const key = pieceAt(i);
-		el.style.background = key ? PIECES[PIECE_INDEX[key]].color : '';
-	}
-	renderExploreOverlay();
-	renderTray();
-}
-
-// ---------- solution-space explorer ----------
-// The board cycles through the solutions that are still possible, drawn as
-// translucent piece colors on the empty cells. Placing a piece narrows the
-// space; at exactly one remaining solution the board finishes itself.
-function exploreActive() {
-	return game?.phase === 'playing' && game.puzzle?.explore && !finishedLocal;
-}
-
-function renderExploreOverlay() {
-	if (!exploreActive() || !exploreSols.length) return;
-	const sol = exploreSols[exploreIdx % exploreSols.length];
-	for (const [key, cells] of Object.entries(sol)) {
-		if (placed.has(key)) continue;
-		for (const i of cells)
-			if (!blockers.includes(i) && !pieceAt(i))
-				cellEls[i].style.background = PIECES[PIECE_INDEX[key]].color + '55';
-	}
-}
-
-function updateExplore() {
-	if (!exploreActive()) return;
-	exploreSols = enumerateSolutions(blockers, Object.fromEntries(placed), EXPLORE_CAP);
-	exploreIdx = 0;
-	const n = exploreSols.length;
-	$('difficulty-label').textContent =
-		`${tierLabel(game.puzzle.tier)} — exploring ${n}${n >= EXPLORE_CAP ? '+' : ''} solution${n === 1 ? '' : 's'}`;
-	if (n === 1 && placed.size > 0 && !autoCompleting) autoComplete(exploreSols[0]);
-}
-
-function autoComplete(sol) {
-	autoCompleting = true;
-	const rest = Object.entries(sol).filter(([key]) => !placed.has(key));
-	const step = () => {
-		if (game?.phase !== 'playing' || finishedLocal) { autoCompleting = false; return; }
-		const next = rest.shift();
-		if (!next) { autoCompleting = false; return; }
-		const [key, cells] = next;
-		placed.set(key, cells);
-		send({ t: 'place', piece: key, cells });
-		selected = null; armedCell = -1;
-		afterChange();
-		setTimeout(step, 280);
-	};
-	step();
-}
-
-function renderTray() {
-	// Every piece sits in a fixed 4x4 box so rotating never resizes a tile
-	// or reflows the tray — the piece just spins in place, centered.
-	trayEl.innerHTML = '';
-	for (const piece of PIECES) {
-		const orients = piece.orients;
-		const orient = orients[piece.key === selected ? orientIdx % orients.length : 0];
-		const maxR = Math.max(...orient.map(o => o[0])), maxC = Math.max(...orient.map(o => o[1]));
-		const offR = Math.floor((4 - (maxR + 1)) / 2), offC = Math.floor((4 - (maxC + 1)) / 2);
-		const el = document.createElement('div');
-		el.className = 'tray-piece' + (piece.key === selected ? ' selected' : '') + (placed.has(piece.key) ? ' placed' : '');
-		for (let r = 0; r < 4; r++)
-			for (let c = 0; c < 4; c++) {
-				const d = document.createElement('div');
-				d.className = 'pc';
-				d.style.background = orient.some(([dr, dc]) => dr + offR === r && dc + offC === c) ? piece.color : 'transparent';
-				el.appendChild(d);
-			}
-		el.addEventListener('click', () => {
-			if (placed.has(piece.key)) return;
-			if (selected === piece.key) orientIdx++;	// tap again = rotate
-			else { selected = piece.key; orientIdx = 0; }
-			armedCell = -1;
-			renderTray(); renderGhost();
-		});
-		trayEl.appendChild(el);
-	}
-}
-
-function rotate() { orientIdx++; renderTray(); renderGhost(); }
-$('btn-rotate').addEventListener('click', rotate);
-document.addEventListener('keydown', e => {
-	if (e.key === 'r' || e.key === 'R' || e.key === 'f' || e.key === 'F') rotate();
-});
-
-function onCellPointer(i, ev) {
-	if (game?.phase !== 'playing' || finishedLocal) return;
-	const onPiece = pieceAt(i);
-	const haveSelection = selected !== null && !placed.has(selected);
-
-	// Nothing selected: tapping a placed piece picks it up (and re-selects it
-	// in its current orientation, ready to move).
-	if (!haveSelection) {
-		if (onPiece) pickUp(onPiece);
-		return;
-	}
-
-	hoverCell = i;
-	if (ev.pointerType === 'touch') {
-		// Two-tap on touch: first tap previews, second tap on the same cell
-		// places. While a piece is selected, a tap never steals a placed
-		// piece — except a deliberate second tap on an occupied cell, which
-		// means "no, I want THAT one back".
-		if (armedCell === i) {
-			if (ghostValid(ghostCells())) placeSelected();
-			else if (onPiece) pickUp(onPiece);
-			return;
-		}
-		armedCell = i;
-		renderGhost();
-		return;
-	}
-	// mouse: hover already previews
-	if (ghostValid(ghostCells())) placeSelected();
-	else if (onPiece) pickUp(onPiece);
-}
-
-function pickUp(key) {
-	const cells = placed.get(key);
-	placed.delete(key);
-	send({ t: 'remove', piece: key });
+function startRoundUI(g) {
 	finishedLocal = false;
-	selected = key;
-	orientIdx = orientIndexFor(key, cells);
-	armedCell = -1;
-	afterChange();
-}
+	const mod = GAMES[g.puzzle.game];
+	$('game-root').innerHTML = '';
+	setStatus('');
+	$('round-game-label').textContent = g.puzzle.summary || mod?.name || g.puzzle.game;
+	startTime = performance.now();
+	clearInterval(timerHandle);
 
-// Which orientation index matches an already-placed set of cells?
-function orientIndexFor(key, cells) {
-	const r0 = Math.min(...cells.map(c => Math.floor(c / 6)));
-	const c0 = Math.min(...cells.map(c => c % 6));
-	const got = new Set(cells.map(c => (Math.floor(c / 6) - r0) * 6 + (c % 6 - c0)));
-	const orients = PIECES[PIECE_INDEX[key]].orients;
-	for (let k = 0; k < orients.length; k++) {
-		const minR = Math.min(...orients[k].map(o => o[0]));
-		const minC = Math.min(...orients[k].map(o => o[1]));
-		if (orients[k].every(([dr, dc]) => got.has((dr - minR) * 6 + (dc - minC)))) return k;
-	}
-	return 0;
-}
-
-function placeSelected() {
-	const cells = ghostCells();
-	placed.set(selected, cells);
-	send({ t: 'place', piece: selected, cells });
-	selected = null; armedCell = -1;
-	afterChange();
-}
-
-$('btn-clear').addEventListener('click', () => {
-	placed.clear(); finishedLocal = false;
-	send({ t: 'clear' });
-	afterChange();
-});
-
-let lastStuckSent = false;
-
-function afterChange() {
-	updateExplore();
-	renderBoard(); renderGhost();
-	const ind = $('solvable-indicator');
-	const covered = [...placed.values()].flat().length + blockers.length === 36;
-	if (covered && !finishedLocal) {
-		finishedLocal = true;
-		clearInterval(timerHandle);
-		ind.className = 'won';
-		send({ t: 'finish', ms: Math.round(performance.now() - startTime) });
-		celebrate();
-		return;
-	}
-	if (!finishedLocal) {
-		// Always compute solvability and tell the room when we're stuck —
-		// opponents get to enjoy that. Whether WE get warned is the puzzle
-		// master's call (showDead), because the warning is a big hint.
-		const solvable = !!solve(blockers, Object.fromEntries(placed));
-		ind.className = game?.puzzle?.showDead === false ? '' : (solvable ? 'ok' : 'dead');
-		if (!solvable !== lastStuckSent) {
-			lastStuckSent = !solvable;
-			send({ t: 'stuck', stuck: !solvable });
+	const points = g.puzzle.scoreMode === 'points';
+	const deadline = startTime + (g.puzzle.durationMs || mod?.durationMs || 0);
+	timerHandle = setInterval(() => {
+		if (points) {
+			const left = Math.max(0, deadline - performance.now());
+			$('timer').textContent = (left / 1000).toFixed(0) + 's';
+			if (left <= 0 && !finishedLocal) {
+				finishedLocal = true;
+				clearInterval(timerHandle);
+				const result = handle?.endRound?.() || { points: 0 };
+				send({ t: 'finish', points: result.points });
+				setStatus(`time! ${result.points} pts`, 'won');
+			}
+		} else if (!finishedLocal) {
+			$('timer').textContent = ((performance.now() - startTime) / 1000).toFixed(1) + 's';
 		}
-	}
+	}, 100);
+	$('timer').textContent = points ? ((g.puzzle.durationMs || 0) / 1000).toFixed(0) + 's' : '0.0s';
+
+	if (!mod) { setStatus(`unknown game "${g.puzzle.game}" — update your app?`, 'bad'); return; }
+	handle = mod.mount($('game-root'), {
+		payload: g.puzzle.payload,
+		options: {},
+		finish() {
+			if (finishedLocal) return;
+			finishedLocal = true;
+			clearInterval(timerHandle);
+			send({ t: 'finish', ms: Math.round(performance.now() - startTime) });
+			celebrate();
+		},
+		progress(blob) { send({ t: 'progress', data: blob }); },
+		setStatus,
+		sendStuck(stuck) { send({ t: 'stuck', stuck: !!stuck }); },
+	});
+}
+
+function endRoundUI() {
+	clearInterval(timerHandle);
+	handle?.destroy?.();
+	handle = null;
+	$('game-root').innerHTML = '';
 }
 
 // ---------- celebration ----------
 function celebrate() {
-	boardEl.classList.add('board-pop');
-	boardEl.addEventListener('animationend', () => boardEl.classList.remove('board-pop'), { once: true });
+	const root = $('game-root');
+	root.classList.add('board-pop');
+	root.addEventListener('animationend', () => root.classList.remove('board-pop'), { once: true });
+	const colors = ['#2563eb', '#9a3412', '#f59e0b', '#16a34a', '#9333ea', '#0ea5e9', '#dc2626', '#eab308'];
 	const burst = document.createElement('div');
 	burst.id = 'confetti';
 	for (let k = 0; k < 90; k++) {
@@ -391,7 +284,7 @@ function celebrate() {
 		d.style.setProperty('--up', (25 + Math.random() * 60).toFixed(1) + 'vh');
 		d.style.setProperty('--rot', ((Math.random() * 2 - 1) * 900).toFixed(0) + 'deg');
 		d.style.setProperty('--t', (1.7 + Math.random() * 1.3).toFixed(2) + 's');
-		d.style.background = PIECES[k % PIECES.length].color;
+		d.style.background = colors[k % colors.length];
 		d.style.left = (50 + (Math.random() * 2 - 1) * 12).toFixed(1) + '%';
 		burst.appendChild(d);
 	}
@@ -405,49 +298,36 @@ function applyState(g, ps) {
 	const isMaster = g.master === me.name;
 	const inLobby = g.phase === 'lobby', proposed = g.phase === 'proposed', playing = g.phase === 'playing';
 
+	document.documentElement.dataset.skin = g.theme || 'classic';
+
 	// round transitions
-	if (playing && lastPhase !== 'playing') {
-		blockers = g.puzzle.cells;
-		placed = new Map(); selected = null; armedCell = -1; finishedLocal = false;
-		lastStuckSent = false; autoCompleting = false;
-		startTime = performance.now();
-		clearInterval(timerHandle);
-		timerHandle = setInterval(() =>
-			$('timer').textContent = ((performance.now() - startTime) / 1000).toFixed(1) + 's', 100);
-		$('solvable-indicator').className = '';
-		$('timer').textContent = '0.0s';
-		const hint = g.puzzle.showCount ? ` — ${g.puzzle.count.toLocaleString()} solutions` : '';
-		$('difficulty-label').textContent = `${tierLabel(g.puzzle.tier)}${hint}`;
-		updateExplore();
-		renderBoard(); renderGhost();
-		clearInterval(exploreTimer);
-		if (g.puzzle.explore)
-			exploreTimer = setInterval(() => {
-				if (!exploreActive() || exploreSols.length < 2) return;
-				exploreIdx++;
-				renderBoard(); renderGhost();
-			}, 700);
+	if (playing && (lastPhase !== 'playing' || g.round !== lastRound)) startRoundUI(g);
+	if (!playing && lastPhase === 'playing') {
+		endRoundUI();
+		// celebrate a points-mode win when the podium lands
+		if (g.lastResult?.winner === me.name && g.lastResult.order[0]?.points != null) celebrate();
 	}
-	if (!playing) { clearInterval(timerHandle); clearInterval(exploreTimer); }
-	lastPhase = g.phase;
+	lastPhase = g.phase; lastRound = g.round;
 
 	$('play-area').hidden = !playing;
 	$('lobby').hidden = playing;
 	$('lobby-title').textContent = proposed ? `Round ${g.round + 1}` :
-		(g.round === 0 ? 'New game' : `Round ${g.round} finished`);
+		(g.round === 0 ? 'New party' : `Round ${g.round} finished`);
 	$('master-controls').hidden = !(inLobby && isMaster);
+	$('party-settings').hidden = !isMaster;
+	if (isMaster) {
+		$('theme-select').value = g.theme || 'classic';
+		$('public-toggle').checked = !!g.isPublic;
+	}
+	if (inLobby && isMaster && !$('game-cards').childElementCount) renderGameCards();
 	if (inLobby && !isMaster)
-		$('lobby-title').textContent += ` — waiting for ${g.master} to set the puzzle`;
+		$('lobby-title').textContent += ` — waiting for ${g.master} to pick a game`;
 
 	// proposal / agreement
 	$('proposal-card').hidden = !proposed;
 	if (proposed) {
-		const bits = [];
-		if (g.proposal.showCount) bits.push(`${g.proposal.count.toLocaleString()} solutions`);
-		if (g.proposal.explore) bits.push('explorer mode');
-		if (g.proposal.showDead === false) bits.push('no dead-end warnings — good luck');
-		const hint = bits.length ? ` (${bits.join(', ')})` : '';
-		$('proposal-text').textContent = `${g.master} proposes: ${tierLabel(g.proposal.tier)}${hint}`;
+		const mod = GAMES[g.proposal.game];
+		$('proposal-text').textContent = `${g.master} proposes: ${mod?.icon || ''} ${g.proposal.summary}`;
 		$('btn-agree').hidden = g.agreed.includes(me.name);
 		$('btn-force').hidden = !isMaster;
 		$('agreed-list').textContent = `ready: ${g.agreed.join(', ')} (${g.agreed.length}/${[...new Set(ps.map(p => p.name))].length})`;
@@ -456,9 +336,11 @@ function applyState(g, ps) {
 	// winner banner
 	const banner = $('banner');
 	if (inLobby && g.lastResult && g.lastResult.winner) {
+		const mod = GAMES[g.lastResult.game];
 		banner.hidden = false;
-		banner.textContent = `🏆 ${g.lastResult.winner} wins round ${g.lastResult.round}! ` +
-			g.lastResult.order.map(o => `${o.name} ${(o.ms / 1000).toFixed(1)}s +${o.points}`).join(' · ');
+		banner.textContent = `🏆 ${g.lastResult.winner} wins round ${g.lastResult.round}${mod ? ` (${mod.name})` : ''}! ` +
+			g.lastResult.order.map(o =>
+				`${o.name} ${o.ms != null ? (o.ms / 1000).toFixed(1) + 's' : (o.points || 0) + ' pts'} +${o.awarded ?? 0}`).join(' · ');
 	} else banner.hidden = true;
 
 	// scores & players
@@ -471,22 +353,14 @@ function applyState(g, ps) {
 
 function renderPlayers(g, ps) {
 	playersEl.innerHTML = '';
+	const mod = g.puzzle ? GAMES[g.puzzle.game] : null;
 	const sorted = [...ps].sort((a, b) => (g.scores[b.name] || 0) - (g.scores[a.name] || 0));
 	for (const p of sorted) {
 		const el = document.createElement('div');
 		el.className = 'player';
 		const mini = document.createElement('div');
-		mini.className = 'mini-board';
-		const byCell = {};
-		for (const [key, cells] of Object.entries(p.placements || {}))
-			for (const c of cells) byCell[c] = PIECES[PIECE_INDEX[key]].color;
-		for (let i = 0; i < 36; i++) {
-			const d = document.createElement('div');
-			d.className = 'mc';
-			if (g.puzzle && g.puzzle.cells.includes(i)) d.style.background = '#999';
-			else if (byCell[i]) d.style.background = byCell[i];
-			mini.appendChild(d);
-		}
+		mini.className = 'pmini';
+		if (mod) mod.renderMini(mini, p.progress, g.puzzle.payload);
 		const name = document.createElement('span');
 		name.className = 'pname';
 		name.textContent = p.name + (p.id === myId ? ' (you)' : '');
@@ -503,7 +377,8 @@ function renderPlayers(g, ps) {
 		}
 		const time = document.createElement('span');
 		time.className = 'ptime';
-		time.textContent = p.finishedMs != null ? (p.finishedMs / 1000).toFixed(1) + 's' : '';
+		time.textContent = p.finishedMs != null ? (p.finishedMs / 1000).toFixed(1) + 's'
+			: p.finishedPts != null ? p.finishedPts + ' pts' : '';
 		const pts = document.createElement('span');
 		pts.className = 'pts';
 		pts.textContent = g.scores[p.name] ?? 0;
@@ -538,13 +413,40 @@ function renderChat(chat = []) {
 	box.scrollTop = box.scrollHeight;
 }
 
+// ---------- public parties on the landing page ----------
+let partiesTimer = 0;
+async function refreshParties() {
+	if ($('landing').hidden) { clearInterval(partiesTimer); return; }
+	try {
+		const list = await (await fetch('/api/parties')).json();
+		const box = $('public-parties');
+		box.innerHTML = '';
+		$('parties-head').hidden = !list.length;
+		for (const p of list) {
+			const mod = GAMES[p.game];
+			const card = document.createElement('button');
+			card.type = 'button';
+			card.className = 'party-card';
+			card.innerHTML = `<b>${THEMES[p.theme]?.label?.split(' ')[0] || '🎲'} ${p.code}</b>
+				<span>${p.host || 'someone'} · ${p.players} player${p.players === 1 ? '' : 's'}</span>
+				<small>${p.phase === 'playing' ? `playing ${mod?.name || p.game}` : 'in the lobby'}</small>`;
+			card.addEventListener('click', () => enterParty(p.code));
+			box.appendChild(card);
+		}
+	} catch {}
+}
+
 // ---------- go ----------
-$('btn-start').addEventListener('click', () => enterRoom());
+$('btn-start').addEventListener('click', () => enterParty());
 $('btn-join').addEventListener('click', () => {
 	const code = $('join-code').value.trim().toUpperCase();
-	if (/^[A-Z]{4}$/.test(code)) enterRoom(code);
+	if (/^[A-Z]{4}$/.test(code)) enterParty(code);
 });
 
 const urlRoom = location.pathname.match(/^\/r\/([A-Za-z]{4})$/);
-if (urlRoom) await enterRoom(urlRoom[1].toUpperCase());	// shared link: straight in
-else $('landing').hidden = false;			// fresh visit: landing page
+if (urlRoom) await enterParty(urlRoom[1].toUpperCase());	// shared link: straight in
+else {
+	$('landing').hidden = false;			// fresh visit: landing page
+	refreshParties();
+	partiesTimer = setInterval(refreshParties, 10000);
+}

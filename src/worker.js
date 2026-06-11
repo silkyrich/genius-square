@@ -1,7 +1,8 @@
-// Genius Square — Cloudflare Worker entry.
-// Serves the static game (assets binding), a small API, room share pages
-// with per-room Open Graph tags, and routes WebSockets to room DOs.
+// Puzzle Party — Cloudflare Worker entry.
+// Serves the static app (assets binding), a small API, party share pages
+// with per-party Open Graph tags, and routes WebSockets to room DOs.
 export { Room } from './room.js';
+export { Directory } from './directory.js';
 
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ';	// no I/L/O/0/1 lookalikes
 
@@ -53,16 +54,22 @@ export default {
 			return Response.json({ code });
 		}
 
+		// Public party directory for the landing page.
+		if (url.pathname === '/api/parties')
+			return env.DIRECTORY.get(env.DIRECTORY.idFromName('main'))
+				.fetch('https://directory/list');
+
 		const wsMatch = url.pathname.match(/^\/ws\/([A-Z]{4})$/);
 		if (wsMatch) {
 			const id = env.ROOM.idFromName(wsMatch[1]);
 			const headers = new Headers(request.headers);
 			const email = identityFrom(request);
 			if (email) headers.set('X-Player-Email', email);
+			headers.set('X-Room-Code', wsMatch[1]);	// DOs don't know their own name
 			return env.ROOM.get(id).fetch(new Request(request, { headers }));
 		}
 
-		// Room share links: serve the app shell with room-specific OG tags
+		// Party share links: serve the app shell with party-specific OG tags
 		// so pasted links unfurl nicely in chat apps.
 		const roomMatch = url.pathname.match(/^\/r\/([A-Za-z]{4})$/);
 		if (roomMatch) {
@@ -70,10 +77,10 @@ export default {
 			const shell = await env.ASSETS.fetch(new Request(new URL('/', url)));
 			let html = await shell.text();
 			html = html
-				.replaceAll('Genius Square — race your friends',
-					`Join my Genius Square room ${code}!`)
-				.replace('content="Race friends to solve the puzzle.',
-					`content="Tap to join room ${code} and race.`);
+				.replaceAll('Puzzle Party — race your friends',
+					`Join my Puzzle Party ${code}!`)
+				.replace('content="Genius Square, Sudoku and Boggle',
+					`content="Tap to join party ${code} and race.`);
 			return new Response(html, {
 				headers: { 'content-type': 'text/html; charset=utf-8' },
 			});

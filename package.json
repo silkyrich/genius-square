@@ -7,7 +7,7 @@
 	"scripts": {
 		"dev": "wrangler dev",
 		"deploy": "wrangler deploy",
-		"test": "node test/solver.test.js"
+		"test": "node test/solver.test.js && node test/sudoku.test.js && node test/boggle.test.js && node test/pipes.test.js && node test/star.test.js"
 	},
 	"devDependencies": {
 		"wrangler": "^4.99.0"

@@ -1,4 +1,5 @@
-/* Mobile-first. Light/dark via CSS variables on :root[data-theme]. */
+/* Mobile-first. Light/dark via CSS variables on :root[data-theme];
+   the party's skin (Pokémon, Tiger Tea, ...) via :root[data-skin]. */
 :root {
 	--bg: #f6f3ec;
 	--surface: #ffffff;
@@ -12,6 +13,7 @@
 	--ok: #16a34a;
 	--bad: #dc2626;
 	--gold: #d97706;
+	--bg-art: none;
 	font-family: system-ui, -apple-system, sans-serif;
 }
 :root[data-theme="dark"] {
@@ -24,9 +26,28 @@
 	--board-bg: #0c0b09;
 	--cell: #3a352e;
 }
+
+/* ---- party skins ---- */
+:root[data-skin="pokemon"] {
+	--accent: #e3350d;
+	--gold: #f5a623;
+	--bg-art: url('/themes/pokemon.jpg');
+}
+:root[data-skin="tigertea"] {
+	--accent: #d97706;
+	--gold: #b45309;
+	--bg-art: url('/themes/tigertea.jpg');
+}
+
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--text); }
+body::before {
+	content: ''; position: fixed; inset: 0; z-index: -1;
+	background: var(--bg-art) center / cover no-repeat;
+	opacity: .35;
+}
+:root[data-theme="dark"] body::before { opacity: .22; }
 
 header {
 	display: flex; align-items: center; gap: .6rem;
@@ -37,7 +58,7 @@ header {
 header h1 { font-size: 1.05rem; margin: 0; flex: 1; }
 #who { display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: var(--muted); }
 #btn-theme { font-size: 1rem; padding: .2rem .5rem; }
-#btn-logout { font-size: .75rem; padding: .15rem .5rem; }
+#btn-login, #btn-logout { font-size: .75rem; padding: .15rem .5rem; }
 
 main {
 	display: flex; flex-direction: column; gap: .8rem;
@@ -50,10 +71,19 @@ h2 { font-size: .95rem; margin: 0 0 .5rem; }
 
 #landing { text-align: center; }
 #landing h2 { font-size: 1.25rem; margin: .8rem 0 .3rem; }
+#landing h3 { font-size: .9rem; margin: 1.2rem 0 .4rem; color: var(--muted); }
 #hero-img { width: 100%; border-radius: 12px; }
 button.big { font-size: 1.1rem; padding: .7rem 1.6rem; margin: .8rem 0 .4rem; width: 100%; }
 #join-row { display: flex; gap: .4rem; justify-content: center; margin-top: .5rem; }
 #join-code { text-transform: uppercase; width: 11em; text-align: center; }
+
+#public-parties { display: flex; flex-direction: column; gap: .4rem; }
+.party-card {
+	display: flex; flex-direction: column; align-items: flex-start; gap: .1rem;
+	text-align: left; padding: .55rem .8rem;
+}
+.party-card b { letter-spacing: .06em; }
+.party-card small { color: var(--muted); }
 
 #room-strip { display: flex; align-items: center; gap: .5rem; }
 #room-label { font-weight: 700; letter-spacing: .08em; flex: 1; }
@@ -63,45 +93,29 @@ button.big { font-size: 1.1rem; padding: .7rem 1.6rem; margin: .8rem 0 .4rem; wi
 	border-radius: 14px; padding: .7rem .9rem; font-weight: 700; text-align: center;
 }
 
-#lobby label { display: block; margin: .5rem 0; font-size: .9rem; }
-#hint-label { color: var(--muted); }
+/* lobby: game picker */
+#game-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-bottom: .6rem; }
+.game-card {
+	display: flex; flex-direction: column; align-items: center; gap: .2rem;
+	padding: .6rem .3rem; text-align: center; border: 2px solid var(--border);
+}
+.game-card.picked { border-color: var(--accent); background: var(--surface-2); }
+.game-card .gc-icon { font-size: 1.5rem; }
+.game-card b { font-size: .85rem; }
+.game-card small { color: var(--muted); font-size: .68rem; line-height: 1.25; }
+#game-options { display: flex; flex-direction: column; gap: .4rem; margin: .5rem 0 .7rem; }
+#game-options label { font-size: .9rem; }
 #agree-row { display: flex; gap: .5rem; margin-top: .5rem; }
 
+/* play area is game-agnostic; modules style their own boards */
 #play-area { display: flex; flex-direction: column; gap: .7rem; align-items: center; }
-#board {
-	display: grid;
-	grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(6, 1fr);
-	gap: 3px; padding: 7px; background: var(--board-bg); border-radius: 14px;
-	width: min(92vw, 410px); aspect-ratio: 1; touch-action: manipulation;
-}
-.cell { background: var(--cell); border-radius: 5px; position: relative; cursor: pointer; }
-.cell.blocker { cursor: default; }
-.cell.blocker::after {
-	content: ''; position: absolute; inset: 22%; border-radius: 50%;
-	background: radial-gradient(circle at 35% 30%, #fff, #c9c4b8 70%);
-	box-shadow: inset 0 -2px 4px rgba(0,0,0,.25);
-}
-.cell.ghost-ok { outline: 3px solid var(--ok); outline-offset: -3px; }
-.cell.ghost-bad { outline: 3px solid var(--bad); outline-offset: -3px; }
-
+#game-root { width: 100%; display: flex; justify-content: center; }
 #status-bar { display: flex; gap: 1rem; align-items: center; font-size: .92rem; min-height: 1.3em; flex-wrap: wrap; justify-content: center; }
 #timer { font-variant-numeric: tabular-nums; font-weight: 700; }
-#solvable-indicator.ok::before { content: '● solvable'; color: var(--ok); }
-#solvable-indicator.dead::before { content: '● dead end'; color: var(--bad); font-weight: 700; }
-#solvable-indicator.won::before { content: '★ solved!'; color: var(--gold); font-weight: 800; }
-
-#tray { display: flex; gap: .45rem; flex-wrap: wrap; justify-content: center; }
-/* fixed 4x4 footprint: rotating a piece never resizes its tile or reflows the tray */
-.tray-piece {
-	display: grid; gap: 2px; padding: 6px; border-radius: 10px; cursor: pointer;
-	grid-template-columns: repeat(4, 13px); grid-template-rows: repeat(4, 13px);
-	background: var(--surface-2); border: 2px solid transparent;
-}
-.tray-piece.selected { border-color: var(--accent); }
-.tray-piece.placed { opacity: .22; }
-.tray-piece .pc { width: 13px; height: 13px; border-radius: 3px; }
-
-#game-buttons { display: flex; gap: .5rem; }
+#game-status.ok { color: var(--ok); }
+#game-status.bad { color: var(--bad); font-weight: 700; }
+#game-status.won { color: var(--gold); font-weight: 800; }
+#round-game-label { margin: 0; text-align: center; }
 
 button, select, input {
 	font: inherit; padding: .45rem .8rem; border-radius: 10px;
@@ -120,17 +134,18 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 .player .pname { flex: 1; font-size: .9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .player .crown { font-size: .8rem; }
 .player .pts { font-weight: 800; font-variant-numeric: tabular-nums; }
-.player .ptime { color: var(--gold); font-size: .8rem; font-variant-numeric: tabular-nums; }
+.player .ptime { color: var(--gold); font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.player .pmini { min-width: 60px; display: flex; justify-content: center; }
 .mini-board {
 	display: grid; grid-template-columns: repeat(6, 9px); grid-template-rows: repeat(6, 9px);
 	gap: 1px; background: var(--board-bg); padding: 2px; border-radius: 4px;
 }
 .mini-board .mc { background: var(--cell); border-radius: 1px; }
+.player .stuck-badge { color: var(--bad); font-size: .72rem; font-weight: 700; }
+.player.stuck .pmini { outline: 2px solid var(--bad); border-radius: 4px; }
+#party-settings { display: flex; flex-direction: column; gap: .4rem; margin-top: .6rem; font-size: .85rem; }
 #master-room-controls { display: flex; gap: .4rem; margin-top: .6rem; flex-wrap: wrap; }
 #master-room-controls button { font-size: .8rem; padding: .3rem .6rem; }
-
-.player .stuck-badge { color: var(--bad); font-size: .72rem; font-weight: 700; }
-.player.stuck .mini-board { outline: 2px solid var(--bad); }
 
 /* chat */
 #chat-log {
@@ -147,7 +162,6 @@ button.google {
 	display: inline-flex; align-items: center; gap: .5rem; justify-content: center;
 	width: 100%; font-weight: 600; padding: .55rem .8rem;
 }
-#btn-login { font-size: .75rem; padding: .15rem .5rem; }
 
 /* solved celebration */
 .board-pop { animation: board-pop .55s ease; }
@@ -181,7 +195,7 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 /* wider screens: two columns */
 @media (min-width: 760px) {
 	main { max-width: 880px; display: grid; grid-template-columns: 1fr 280px; align-items: start; }
-	#room-strip, #banner { grid-column: 1 / -1; }
+	#landing, #room-strip, #banner { grid-column: 1 / -1; }
 	#lobby { grid-column: 1; }
 	#players-panel { grid-column: 2; }
 	#chat-panel { grid-column: 2; }

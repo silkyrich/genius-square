@@ -90,16 +90,13 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" 
 	<rect x="${BX}" y="${BY}" width="${BOARD}" height="${BOARD}" rx="26" fill="#23201b"/>
 </g>
 ${cells}${placed}${pearls}${ghostRects}${hand}
-<text x="${TX}" y="${BY + 118}" font-size="78" font-weight="800" fill="#f3ede2" letter-spacing="-1">Genius</text>
-<text x="${TX}" y="${BY + 200}" font-size="78" font-weight="800" fill="#f3ede2" letter-spacing="-1">Square</text>
-<text x="${TX}" y="${BY + 262}" font-size="30" fill="#b9b1a3">Race your friends to solve</text>
-<text x="${TX}" y="${BY + 302}" font-size="30" fill="#b9b1a3">the square.</text>
-<g transform="translate(${TX}, ${BY + 348})">
-	<circle cx="10" cy="0" r="9" fill="#16a34a"/>
-	<circle cx="38" cy="0" r="9" fill="#eab308"/>
-	<circle cx="66" cy="0" r="9" fill="#f59e0b"/>
-	<circle cx="94" cy="0" r="9" fill="#dc2626"/>
-	<text x="118" y="9" font-size="24" fill="#8d8576">easy → one-solution brutal</text>
+<text x="${TX}" y="${BY + 118}" font-size="78" font-weight="800" fill="#f3ede2" letter-spacing="-1">Puzzle</text>
+<text x="${TX}" y="${BY + 200}" font-size="78" font-weight="800" fill="#f3ede2" letter-spacing="-1">Party</text>
+<text x="${TX}" y="${BY + 262}" font-size="30" fill="#b9b1a3">Race your friends —</text>
+<text x="${TX}" y="${BY + 302}" font-size="30" fill="#b9b1a3">any puzzle, one party.</text>
+<g transform="translate(${TX}, ${BY + 352})">
+	<text x="0" y="9" font-size="24" fill="#8d8576">Genius Square · Genius Star · Sudoku</text>
+	<text x="0" y="45" font-size="24" fill="#8d8576">Boggle · Pipes — more to come</text>
 </g>
 </svg>
 `;

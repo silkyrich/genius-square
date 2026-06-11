@@ -111,15 +111,12 @@
 <rect x="352" y="382" width="52" height="52" rx="8" fill="none" stroke="#16a34a" stroke-width="4" stroke-dasharray="10 7"/>
 <rect x="414" y="382" width="52" height="52" rx="8" fill="none" stroke="#16a34a" stroke-width="4" stroke-dasharray="10 7"/>
 <g transform="translate(458, 364) rotate(14)" filter="url(#drop)"><rect x="68" y="0" width="62" height="62" rx="10" fill="#9333ea"/><rect x="73" y="5" width="52" height="26" rx="7" fill="#ffffff" opacity=".16"/><rect x="0" y="68" width="62" height="62" rx="10" fill="#9333ea"/><rect x="5" y="73" width="52" height="26" rx="7" fill="#ffffff" opacity=".16"/><rect x="68" y="68" width="62" height="62" rx="10" fill="#9333ea"/><rect x="73" y="73" width="52" height="26" rx="7" fill="#ffffff" opacity=".16"/></g>
-<text x="604" y="234" font-size="78" font-weight="800" fill="#f3ede2" letter-spacing="-1">Genius</text>
-<text x="604" y="316" font-size="78" font-weight="800" fill="#f3ede2" letter-spacing="-1">Square</text>
-<text x="604" y="378" font-size="30" fill="#b9b1a3">Race your friends to solve</text>
-<text x="604" y="418" font-size="30" fill="#b9b1a3">the square.</text>
-<g transform="translate(604, 464)">
-	<circle cx="10" cy="0" r="9" fill="#16a34a"/>
-	<circle cx="38" cy="0" r="9" fill="#eab308"/>
-	<circle cx="66" cy="0" r="9" fill="#f59e0b"/>
-	<circle cx="94" cy="0" r="9" fill="#dc2626"/>
-	<text x="118" y="9" font-size="24" fill="#8d8576">easy → one-solution brutal</text>
+<text x="604" y="234" font-size="78" font-weight="800" fill="#f3ede2" letter-spacing="-1">Puzzle</text>
+<text x="604" y="316" font-size="78" font-weight="800" fill="#f3ede2" letter-spacing="-1">Party</text>
+<text x="604" y="378" font-size="30" fill="#b9b1a3">Race your friends —</text>
+<text x="604" y="418" font-size="30" fill="#b9b1a3">any puzzle, one party.</text>
+<g transform="translate(604, 468)">
+	<text x="0" y="9" font-size="24" fill="#8d8576">Genius Square · Genius Star · Sudoku</text>
+	<text x="0" y="45" font-size="24" fill="#8d8576">Boggle · Pipes — more to come</text>
 </g>
 </svg>
