@@ -21,6 +21,8 @@
 		{ "tag": "v3", "new_sqlite_classes": ["Feedback"] }
 	],
 	"routes": [
+		{ "pattern": "puzzlegame.party", "custom_domain": true },
+		{ "pattern": "www.puzzlegame.party", "custom_domain": true },
 		{ "pattern": "genius-square.richmorgan.co.uk", "custom_domain": true }
 	],
 	"observability": { "enabled": true }

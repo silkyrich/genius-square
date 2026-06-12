@@ -48,9 +48,19 @@ function identityFrom(request) {
 		|| getCookie(request, 'gs-email') || null;
 }
 
+const CANONICAL_HOST = 'puzzlegame.party';
+
 export default {
 	async fetch(request, env) {
 		const url = new URL(request.url);
+
+		// The party moved: send navigations on the old domain (and www) to
+		// puzzlegame.party. API/WS keep working everywhere so live rooms
+		// survive the transition.
+		if (url.hostname !== CANONICAL_HOST
+			&& !url.pathname.startsWith('/api/') && !url.pathname.startsWith('/ws/')
+			&& (request.headers.get('Accept') || '').includes('text/html'))
+			return Response.redirect(`https://${CANONICAL_HOST}${url.pathname}${url.search}`, 301);
 
 		if (url.pathname === '/api/me')
 			return Response.json({ email: identityFrom(request) });
