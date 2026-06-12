@@ -5,15 +5,21 @@
 	"version": "0.1.0",
 	"description": "Multiplayer Genius Square at genius-square.richmorgan.co.uk",
 	"scripts": {
-		"dev": "wrangler dev",
-		"deploy": "wrangler deploy",
-		"test": "node test/solver.test.js && node test/sudoku.test.js && node test/boggle.test.js && node test/pipes.test.js && node test/star.test.js && node test/nonogram.test.js && node test/lightsout.test.js && node test/mines.test.js && node test/wordsearch.test.js && node test/g2048.test.js && node test/trio.test.js && node test/memory.test.js && node test/kenken.test.js"
+		"dev": "wrangler dev --port 8787",
+		"deploy": "vite build && wrangler deploy",
+		"test": "node test/solver.test.js && node test/sudoku.test.js && node test/boggle.test.js && node test/pipes.test.js && node test/star.test.js && node test/nonogram.test.js && node test/lightsout.test.js && node test/mines.test.js && node test/wordsearch.test.js && node test/g2048.test.js && node test/trio.test.js && node test/memory.test.js && node test/kenken.test.js",
+		"build": "vite build",
+		"dev:ui": "vite"
 	},
 	"devDependencies": {
 		"wrangler": "^4.99.0"
 	},
 	"dependencies": {
+		"@vitejs/plugin-react": "^6.0.2",
 		"html2canvas": "^1.4.1",
-		"qrcode-generator": "^2.0.4"
+		"qrcode-generator": "^2.0.4",
+		"react": "^19.2.7",
+		"react-dom": "^19.2.7",
+		"vite": "^8.0.16"
 	}
 }
